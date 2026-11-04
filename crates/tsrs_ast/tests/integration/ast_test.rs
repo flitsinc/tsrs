@@ -59,6 +59,69 @@ fn build_walk_and_cast() {
 }
 
 #[test]
+fn arrow_function_token() {
+    let f = NodeFactory::default();
+    let parameters = f.new_node_list(vec![]);
+    let body = f.new_block(f.new_node_list(vec![]), false);
+    let arrow = f.new_arrow_function(None, None, Some(parameters), None, None, None, Some(body));
+    let token = arrow.as_arrow_function().equals_greater_than_token().unwrap();
+    assert_eq!(token.kind(), Kind::EqualsGreaterThanToken);
+    assert_eq!(arrow.clone_node(&f).as_arrow_function().equals_greater_than_token(), Some(token));
+    let explicit_token = f.new_token(Kind::EqualsGreaterThanToken);
+    let explicit = f.new_arrow_function(
+        None,
+        None,
+        Some(parameters),
+        None,
+        None,
+        Some(explicit_token),
+        Some(body),
+    );
+    assert_eq!(explicit.as_arrow_function().equals_greater_than_token(), Some(explicit_token));
+    let updated = f.update_arrow_function(
+        explicit,
+        None,
+        None,
+        Some(parameters),
+        None,
+        None,
+        None,
+        Some(body),
+    );
+    assert_eq!(
+        updated.as_arrow_function().equals_greater_than_token().unwrap().kind(),
+        Kind::EqualsGreaterThanToken
+    );
+}
+
+#[test]
+fn clause_node_accessors() {
+    let f = NodeFactory::default();
+    let expression = f.new_identifier("value");
+    let statement = f.new_break_statement(None);
+    let statements = f.new_node_list(vec![statement]);
+    let case_clause = f.new_case_clause(expression, statements);
+    let default_clause = f.new_default_clause(statements);
+    assert_eq!(case_clause.expression(), Some(expression));
+    for clause in [case_clause, default_clause] {
+        assert_eq!(clause.statement_list(), Some(statements));
+        assert_eq!(clause.case_or_default_clause_data().unwrap().statements, statements);
+        let expected = if clause.kind() == Kind::CaseClause {
+            vec![expression, statement]
+        } else {
+            vec![statement]
+        };
+        assert_eq!(children(clause), expected);
+        let cloned = clause.clone_node(&f);
+        assert_eq!(cloned.kind(), clause.kind());
+        if clause.kind() == Kind::CaseClause {
+            assert_eq!(cloned.expression(), Some(expression));
+        }
+        assert_eq!(cloned.statement_list(), Some(statements));
+    }
+}
+
+#[test]
 fn token_factory_uses_canonical_payloads() {
     let f = NodeFactory::default();
 

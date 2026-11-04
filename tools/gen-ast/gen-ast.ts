@@ -1020,6 +1020,9 @@ function genNewFactory(node: NodeType) {
             if (kinds.length === 0) throw new Error(`${node.name}: no canonical kinds`);
             w(`        assert!(matches!(kind, ${kinds.map(kind => `Kind::${kind}`).join(" | ")}), "Invalid node kind for ${node.name}");`);
         }
+        if (node.name === "ArrowFunction") {
+            w("        let equals_greater_than_token = Some(equals_greater_than_token.unwrap_or_else(|| self.new_token(Kind::EqualsGreaterThanToken)));");
+        }
         const values = new Map<string, string>();
         for (const p of params) {
             if (p.m.isKindParam() || isNodeFlagsMember(p.m)) continue;
