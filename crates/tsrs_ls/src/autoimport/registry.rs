@@ -1054,7 +1054,7 @@ impl RegistryBuilder<'_> {
                                 .cloned()
                                 .unwrap_or_default();
                             entry.change(|bucket| bucket.mark_node_modules_dirty(&package_name));
-                            if !entry.value().unwrap().state.multiple_files_dirty {
+                            if entry.value().unwrap().state.multiple_files_dirty {
                                 clean_node_modules_buckets.remove(&dir_path);
                             }
                         }
@@ -1070,7 +1070,7 @@ impl RegistryBuilder<'_> {
                                 // Use the package name for granular updates
                                 entry
                                     .change(|bucket| bucket.mark_node_modules_dirty(&package_name));
-                                if !entry.value().unwrap().state.multiple_files_dirty {
+                                if entry.value().unwrap().state.multiple_files_dirty {
                                     clean_node_modules_buckets.remove(&bucket_dir_path);
                                 }
                             }
@@ -1088,7 +1088,7 @@ impl RegistryBuilder<'_> {
                     if entry.value().unwrap().paths.contains_key(&path) {
                         // Project buckets don't use package-based granular updates
                         entry.change(|bucket| bucket.mark_project_file_dirty(&path));
-                        if !entry.value().unwrap().state.multiple_files_dirty {
+                        if entry.value().unwrap().state.multiple_files_dirty {
                             clean_project_buckets.remove(&project_dir_path);
                         }
                     }
