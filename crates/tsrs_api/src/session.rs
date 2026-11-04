@@ -145,6 +145,8 @@ impl Session {
                 telemetry_enabled: false,
                 push_diagnostics_enabled: false,
                 run_external_code: options.run_external_code,
+                initial_workspace_roots: None,
+                initial_workspace_folders: Vec::new(),
                 debounce_delay: std::time::Duration::ZERO,
                 checker_pool_options: tsrs_project::CheckerPoolOptions::default(),
             }),
