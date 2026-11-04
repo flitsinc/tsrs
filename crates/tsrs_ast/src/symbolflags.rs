@@ -36,8 +36,9 @@ bitflags! {
         const ModuleExports = 1 << 27; // Symbol for CommonJS `module` of `module.exports`
         const ConstEnumOnlyModule = 1 << 28; // Module contains only const enums or other modules with only const enums
         const ReplaceableByMethod = 1 << 29;
-        const GlobalLookup = 1 << 30; // Flag to signal this is a global lookup
-        const All = (1 << 30) - 1; // All flags except SymbolFlagsGlobalLookup
+        const GlobalLookup = 1 << 30; // Flag to signal this is a global lookup (internal to NameResolver)
+        const NameProxy = 1 << 30; // Renamed symbol proxy (internal to symbol tables)
+        const All = (1 << 30) - 1; // All flags except SymbolFlagsGlobalLookup/NameProxy
 
         const Enum = Self::RegularEnum.bits() | Self::ConstEnum.bits();
         const Variable = Self::FunctionScopedVariable.bits() | Self::BlockScopedVariable.bits();
