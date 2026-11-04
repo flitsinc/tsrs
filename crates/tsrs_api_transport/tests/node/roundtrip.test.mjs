@@ -11,7 +11,7 @@ import { after, describe, test } from "node:test";
 const api = `${process.env.TS_REF}/packages/typescript/src/api`;
 const SERVER = process.env.SERVER;
 const { Client: SyncClient } = await import(`${api}/sync/client.ts`);
-const { Client: AsyncClient } = await import(`${api}/async/client.ts`);
+const { createClient } = await import(`${api}/async/client.ts`);
 const { serverFS } = await import(`${api}/fs.ts`);
 
 const ASTRAL = "const \u{1F600} = '\u{1D7D8}\u00e9';\n";
@@ -224,7 +224,7 @@ describe("sync client (MessagePack, pinned SyncRpcChannel)", () => {
 });
 
 function asyncClient(options = {}) {
-    return new AsyncClient({ tsserverPath: SERVER, cwd: tmp, ...options });
+    return createClient({ tsserverPath: SERVER, cwd: tmp, ...options });
 }
 
 describe("async client (JSON-RPC, pinned vscode-jsonrpc client)", () => {
@@ -333,7 +333,7 @@ describe("async client (JSON-RPC, pinned vscode-jsonrpc client)", () => {
         for (let i = 0; i < 200 && !existsSync(pipe); i++) await new Promise(r => setTimeout(r, 10));
         assert.equal(statSync(pipeDir).mode & 0o777, 0o700);
         assert.equal(statSync(pipe).mode & 0o777, 0o600);
-        const c = new AsyncClient({ pipe });
+        const c = createClient({ pipe });
         try {
             assert.equal(await c.apiRequest("ping", null), "pong");
             assert.equal(await c.apiRequest("test/depth", null), 0);

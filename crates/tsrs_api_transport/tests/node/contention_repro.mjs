@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const api = `${process.env.TS_REF}/packages/typescript/src/api`;
-const { Client } = await import(`${api}/async/client.ts`);
+const { createClient } = await import(`${api}/async/client.ts`);
 const exe = process.argv[2];
 const rounds = Number(process.argv[3] ?? 5);
 
@@ -36,7 +36,7 @@ const fs = {
     readFile: p => p, fileExists: serverFS.useOS, directoryExists: serverFS.useOS, getAccessibleEntries: serverFS.useOS,
     realpath: serverFS.useOS, stat: serverFS.useOS, writeFile: serverFS.useOS, removeFile: serverFS.useOS,
 };
-const client = new Client({ tsserverPath: exe, cwd: root, fs });
+const client = createClient({ tsserverPath: exe, cwd: root, fs });
 await client.connect();
 client.registerCallback("readFile", async p => {
     if (gate && p.startsWith(slow)) {
@@ -48,7 +48,7 @@ client.registerCallback("readFile", async p => {
     return { kind: "useOS" };
 });
 const snap = await client.apiRequest("createSnapshot", { openProjects: [join(heavy, "tsconfig.json")] });
-const project0 = snap.projects[0].id;
+const project0 = snap.projects[0].handle;
 const resource = process.env.RESOURCE ?? "build";
 const orchestrator = (await client.apiRequest("createBuildOrchestrator", { rootNames: [join(heavy, "tsconfig.json")] })).buildOrchestratorID;
 const typeAt = () => client.apiRequest("getTypeAtPosition", { snapshot: snap.snapshot, project: project0, file: join(heavy, "f1.ts"), position: 140 });

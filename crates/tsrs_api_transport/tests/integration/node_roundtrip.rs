@@ -1,7 +1,7 @@
 // Runs tests/node/roundtrip.test.mjs (the pinned Node sync and async clients from ts-ref) against
 // examples/transport_test_server. This is a mandatory parity gate: it FAILS (never skips) when `node`
 // (>= 22.6, type stripping) or the pinned microsoft/TypeScript checkout (`<workspace>/ts-ref` or
-// `$TSRS_TS_REF`, with packages/typescript/{src,lib,vendor}) is missing. For the Rust-only tests run
+// `$TSRS_TS_REF`, with packages/typescript/{src,enums,lib,vendor}) is missing. For the Rust-only tests run
 // `cargo test -p tsrs_api_transport --test integration -- --skip node_roundtrip`.
 
 use std::path::PathBuf;
@@ -14,18 +14,20 @@ fn pinned_node_clients_round_trip() {
         .map_or_else(|| manifest.join("../../ts-ref"), PathBuf::from);
     let client = ts_ref.join("packages/typescript/src/api/sync/client.ts");
     let node_ok = Command::new("node").arg("--version").output().is_ok_and(|o| o.status.success());
-    let commit = "3e9236361fa97a9e6c685f4833ac457ae2d8c50a";
+    let commit = "e2bc2bcb838e60fd44c02f0b224b8201a4d7ff5b";
     assert!(
         node_ok,
         "missing dependency: `node` (>= 22.6) is not on PATH. Install Node 24, or run the Rust-only tests with \
          `cargo test -p tsrs_api_transport --test integration -- --skip node_roundtrip`."
     );
     assert!(
-        client.exists() && ts_ref.join("packages/typescript/vendor/vscode-jsonrpc").exists(),
+        client.exists()
+            && ts_ref.join("packages/typescript/enums/checkFlags.js").exists()
+            && ts_ref.join("packages/typescript/vendor/vscode-jsonrpc").exists(),
         "missing dependency: pinned TypeScript client not found at {}. Check out microsoft/TypeScript {commit} into \
          <workspace>/ts-ref (or set TSRS_TS_REF), e.g.\n  git -C ts-ref init && git -C ts-ref remote add origin \
          https://github.com/microsoft/TypeScript.git && git -C ts-ref fetch --depth 1 --filter=blob:none origin {commit} && \
-         git -C ts-ref sparse-checkout set packages/typescript/src packages/typescript/lib packages/typescript/vendor && \
+         git -C ts-ref sparse-checkout set packages/typescript/src packages/typescript/enums packages/typescript/lib packages/typescript/vendor && \
          git -C ts-ref checkout FETCH_HEAD",
         client.display()
     );

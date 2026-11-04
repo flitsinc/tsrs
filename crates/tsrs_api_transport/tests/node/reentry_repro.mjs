@@ -55,7 +55,7 @@ async function child(exe, mode, scenario) {
     let nested;
     const isAsync = mode === "async";
     const req = (m, params) => client.apiRequest(m, params);
-    const firstProject = r => r.projects[0].id;
+    const firstProject = r => r.projects[0].handle;
     let previous;
     let orchestrator;
     const isBuild = scenario.endsWith("DuringBuild");
@@ -107,9 +107,9 @@ async function child(exe, mode, scenario) {
     if (isAsync) {
         // The pinned async fsCallbacks API takes plain values; register readFile as a raw callback that
         // may await nested API calls (vscode-jsonrpc handles requests concurrently).
-        const { Client } = await import(`${api}/async/client.ts`);
+        const { createClient } = await import(`${api}/async/client.ts`);
         fs.readFile = p => p; // placeholder so --callbacks includes readFile
-        client = new Client(opts);
+        client = createClient(opts);
         await client.connect();
         client.registerCallback("readFile", async p => {
             await onRead(p);

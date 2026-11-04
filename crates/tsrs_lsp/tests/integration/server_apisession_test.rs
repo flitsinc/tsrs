@@ -127,11 +127,17 @@ fn api_session_sees_the_language_servers_open_files() {
         get(&snapshot, "operation.openedFiles.0.project"),
         &Value::String(CONFIG_FILE_NAME.into())
     );
+    let Value::Array(projects) = get(&snapshot, "projects") else { panic!("{snapshot:?}") };
+    let opened_project = projects
+        .iter()
+        .find(|project| get(project, "id") == get(&snapshot, "operation.openedFiles.0.project"))
+        .expect("opened file's project is returned in the snapshot");
+    let project = number(get(opened_project, "handle"));
     assert!(client.server.session().snapshot().project_collection.inferred_project().is_some());
     let diagnostics = api.request(
         "getSemanticDiagnostics",
         &format!(
-            r#"{{"snapshot":{},"project":"{CONFIG_FILE_NAME}","files":["{FILE_NAME}"]}}"#,
+            r#"{{"snapshot":{},"project":{project},"files":["{FILE_NAME}"]}}"#,
             number(get(&snapshot, "snapshot"))
         ),
     );
