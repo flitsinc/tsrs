@@ -1091,6 +1091,10 @@ fn overlay_file_handles(overlays: &OverlayMap) -> FxHashMap<Path, Arc<dyn FileHa
 
 // ls.Host
 impl tsrs_ls::Host for Snapshot {
+    fn get_workspace_folders(&self) -> &[tsrs_ls::WorkspaceFolder] {
+        &self.host.options.initial_workspace_folders
+    }
+
     // snapshot.go:270
     fn use_case_sensitive_file_names(&self) -> bool {
         self.fs.fs.use_case_sensitive_file_names()

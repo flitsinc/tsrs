@@ -9,6 +9,7 @@ use tsrs_checker::Checker;
 use tsrs_compiler::Program;
 use tsrs_core::collections::{OrderedMap, Set};
 use tsrs_core::context::Context;
+use tsrs_core::tspath::{self, ComparePathsOptions};
 use tsrs_core::{P, TextPos, TextRange};
 use tsrs_lsproto as lsproto;
 use tsrs_printer::{self as printer, EmitTextWriter as _};
@@ -180,7 +181,7 @@ fn get_symbol_of_call_hierarchy_declaration(c: &mut Checker, node: P<Node>) -> O
 fn get_call_hierarchy_item_name(program: &'static Program, node: P<Node>) -> (String, u32, u32) {
     if ast::is_source_file(node) {
         let source_file = node.as_source_file();
-        return (source_file.file_name().to_string(), 0, 0);
+        return (tspath::get_base_file_name(source_file.original_file_name()).to_string(), 0, 0);
     }
 
     if (ast::is_function_declaration(node) || ast::is_class_declaration(node))
@@ -618,7 +619,23 @@ impl LanguageService {
     ) -> Option<lsproto::CallHierarchyItem> {
         let source_file = ast::get_source_file_of_node(node).unwrap();
         let (name_text, name_pos, name_end) = get_call_hierarchy_item_name(program, node);
-        let container_name = get_call_hierarchy_item_container_name(program, node);
+        let mut container_name = get_call_hierarchy_item_container_name(program, node);
+        if ast::is_source_file(node) {
+            let directory = tspath::get_directory_path(source_file.original_file_name());
+            container_name.clone_from(&directory);
+            let folders = self.host.get_workspace_folders();
+            let options = ComparePathsOptions {
+                current_directory: String::new(),
+                use_case_sensitive_file_names: self.use_case_sensitive_file_names(),
+            };
+            if let Some(folder) = get_containing_workspace_folder(&directory, folders, &options) {
+                container_name =
+                    tspath::get_relative_path_from_directory(&folder.path, &directory, &options);
+                if folders.len() > 1 && !folder.name.is_empty() {
+                    container_name = format!("{}/{container_name}", folder.name);
+                }
+            }
+        }
 
         let kind = get_symbol_kind_from_node(node);
 
@@ -667,6 +684,34 @@ impl LanguageService {
 }
 
 // callhierarchy.go:533
+fn get_containing_workspace_folder<'a>(
+    directory: &str,
+    folders: &'a [crate::host::WorkspaceFolder],
+    options: &ComparePathsOptions,
+) -> Option<&'a crate::host::WorkspaceFolder> {
+    let mut containing: Option<&crate::host::WorkspaceFolder> = None;
+    for folder in folders {
+        let parent;
+        let search_directory = if tspath::compare_paths(&folder.path, directory, options).is_eq() {
+            parent = tspath::get_directory_path(directory);
+            &parent
+        } else {
+            directory
+        };
+        if !tspath::contains_path(&folder.path, search_directory, options) {
+            continue;
+        }
+        if let Some(previous) = containing
+            && (tspath::compare_paths(&previous.path, &folder.path, options).is_eq()
+                || !tspath::contains_path(&previous.path, &folder.path, options))
+        {
+            continue;
+        }
+        containing = Some(folder);
+    }
+    containing
+}
+
 struct CallSite {
     declaration: P<Node>,
     text_range: TextRange,

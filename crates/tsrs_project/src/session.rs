@@ -93,6 +93,7 @@ pub struct SessionOptions {
     // gated on workspace trust by the client. It corresponds to the --runExternalCode CLI flag.
     pub run_external_code: bool,
     pub initial_workspace_roots: Option<Vec<String>>,
+    pub initial_workspace_folders: Vec<tsrs_ls::WorkspaceFolder>,
     pub debounce_delay: Duration,
     pub checker_pool_options: CheckerPoolOptions,
 }

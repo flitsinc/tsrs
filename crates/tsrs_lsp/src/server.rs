@@ -2046,6 +2046,22 @@ impl Server {
 
         let initialize_params = Arc::clone(self.initialize_params.get().unwrap());
         let workspace_roots = get_initial_workspace_roots(&initialize_params);
+        let workspace_folders = match &initialize_params.workspace_folders {
+            Some(lsproto::WorkspaceFoldersOrNull { workspace_folders: Some(folders) }) => folders
+                .iter()
+                .map(|folder| tsrs_ls::WorkspaceFolder {
+                    path: file_name_or_empty(&lsproto::DocumentUri(folder.uri.0.clone())),
+                    name: folder.name.clone(),
+                })
+                .collect(),
+            _ => workspace_roots
+                .iter()
+                .map(|root| tsrs_ls::WorkspaceFolder {
+                    path: root.clone(),
+                    name: tspath::get_base_file_name(root).to_string(),
+                })
+                .collect(),
+        };
         let mut cwd = self.cwd.clone();
         if self.client_capabilities().workspace.workspace_folders
             && matches!(&initialize_params.workspace_folders, Some(lsproto::WorkspaceFoldersOrNull { workspace_folders: Some(folders),  }) if folders.len() == 1)
@@ -2093,6 +2109,7 @@ impl Server {
                 push_diagnostics_enabled: !disable_push_diagnostics,
                 run_external_code,
                 initial_workspace_roots: Some(workspace_roots),
+                initial_workspace_folders: workspace_folders,
                 ..Default::default()
             }),
             fs: self.fs.clone().expect("FS is required"),
