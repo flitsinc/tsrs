@@ -2384,7 +2384,10 @@ impl Checker {
             }
             let target_symbol = self.resolve_alias(symbol);
             let alias_declaration = Self::get_declaration_of_alias_symbol(symbol);
-            let export_symbol = self.get_target_of_alias_declaration(alias_declaration);
+            let export_symbol = self.get_target_of_alias_declaration(
+                alias_declaration,
+                false, /*dontRecursivelyResolve*/
+            );
             // It only makes sense to get the type of a value symbol. If the result of resolving
             // the alias is not a value, then it has no type. To get the type associated with a
             // type symbol, call getDeclaredTypeOfSymbol.
@@ -3040,9 +3043,15 @@ impl Checker {
         t: P<Type>,
         kind: SignatureKind,
     ) -> &'static [P<Signature>] {
+        if t.object_flags().intersects(ObjectFlags::Mapped | ObjectFlags::ReverseMapped) {
+            if self.lazy_members && !t.object_flags_lazy().intersects(ObjectFlags::MembersResolved)
+            {
+                self.lazy_member_stats.mapped_signature_early_returns += 1;
+            }
+            return &[];
+        }
         if t.flags().intersects(TypeFlags::StructuredType)
             && t.object_flags_lazy().intersects(ObjectFlags::MembersResolved)
-            && !(self.lazy_members && t.object_flags().intersects(ObjectFlags::Mapped))
         {
             let resolved = t.as_structured_type();
             return if kind == SignatureKind::Call {
@@ -3071,16 +3080,6 @@ impl Checker {
                 return ready.call_signatures.get();
             }
             return ready.construct_signatures.get();
-        }
-        if self.lazy_members
-            && self.mapped_types_resolving == 0
-            && t.object_flags().intersects(ObjectFlags::Mapped)
-        {
-            if !t.object_flags_lazy().intersects(ObjectFlags::MembersResolved) {
-                self.lazy_member_stats.mapped_signature_early_returns += 1;
-            }
-            // Mapped types have no signatures.
-            return &[];
         }
         let resolved = self.resolve_structured_type_members(t);
         if kind == SignatureKind::Call {

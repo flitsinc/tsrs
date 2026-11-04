@@ -4,6 +4,39 @@ use tsrs_core::{alloc_str, stringutil};
 use tsrs_scanner::Scanner;
 use tsrs_scanner::utilities::normalize_jsdoc_type_source_text;
 
+// https://github.com/microsoft/TypeScript/issues/65076
+#[test]
+fn test_reg_exp_literal_replacement_character_in_class_range() {
+    let tests = [
+        ("range ending in literal U+FFFD", "export const r = /[\\uFFF9-�]/;"),
+        ("range ending in literal U+FFFD with u flag", "export const r = /[\\uFFF9-�]/u;"),
+        ("escaped U+FFFD range end", r"export const r = /[\uFFF9-\uFFFD]/;"),
+        ("lone literal U+FFFD", "export const r = /�/;"),
+        ("range starting with literal U+FFFD", "export const r = /[�-\\uFFFF]/;"),
+    ];
+    for (name, text) in tests {
+        let mut s = Scanner::new();
+        s.set_on_error(true);
+        s.set_text(text);
+        loop {
+            let mut token = s.scan();
+            if matches!(token, Kind::SlashToken | Kind::SlashEqualsToken) {
+                token = s.re_scan_slash_token(true);
+            }
+            if token == Kind::EndOfFile {
+                break;
+            }
+        }
+        for error in s.take_errors() {
+            assert!(
+                !matches!(error.message.code(), 1516 | 1517),
+                "unexpected regex character-class diagnostic {} for {name}: {text}",
+                error.message.code(),
+            );
+        }
+    }
+}
+
 #[test]
 fn test_scan_source_keyword() {
     let mut scanner = Scanner::new();

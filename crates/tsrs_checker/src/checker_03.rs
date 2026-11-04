@@ -2691,6 +2691,10 @@ impl Checker {
                 // variable renaming in function type notation is confusing,
                 // so we forbid it even if noUnusedLocals is not enabled
                 self.renamed_binding_elements_in_types.push(node);
+                // Still resolve the type like the end of this function does for every other declaration,
+                // so implicit any errors are reported by checking instead of by whatever asks for the type later
+                let symbol = self.get_symbol_of_declaration(node).unwrap();
+                self.get_type_of_symbol(symbol);
                 return;
             }
             if is_object_binding_pattern(node.parent().unwrap())

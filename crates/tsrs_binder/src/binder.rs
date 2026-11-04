@@ -1515,6 +1515,9 @@ impl Binder {
 
     fn bind_class_like_declaration(&mut self, node: P<Node>) {
         let name = node.name();
+        if !node.flags().intersects(NodeFlags::Ambient) {
+            self.check_strict_mode_eval_or_arguments(node, name);
+        }
         match node.kind() {
             Kind::ClassDeclaration => {
                 self.bind_block_scoped_declaration(
@@ -2296,7 +2299,7 @@ impl Binder {
 
     fn get_strict_mode_eval_or_arguments_message(&self, node: P<Node>) -> &'static Message {
         // Provide specialized messages to help the user understand why we think they're in strict mode
-        if ast::get_containing_class(node).is_some() {
+        if ast::is_class_like(node) || ast::get_containing_class(node).is_some() {
             return &diagnostics::CODE_CONTAINED_IN_A_CLASS_IS_EVALUATED_IN_JAVA_SCRIPT_S_STRICT_MODE_WHICH_DOES_NOT_ALLOW_THIS_USE_OF_0_FOR_MORE_INFORMATION_SEE_HTTPS_COLON_SLASH_SLASHDEVELOPER_MOZILLA_ORG_SLASHEN_US_SLASHDOCS_SLASH_WEB_SLASH_JAVA_SCRIPT_SLASH_REFERENCE_SLASH_STRICT_MODE;
         }
         if self.file.external_module_indicator.get().is_some() {
