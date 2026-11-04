@@ -47,7 +47,8 @@ impl Checker {
             let Some(node) = node else {
                 panic!("Unexpected nil in getImmediateAliasedSymbol");
             };
-            let target = self.get_target_of_alias_declaration(Some(node));
+            let target = self
+                .get_target_of_alias_declaration(Some(node), true /*dontRecursivelyResolve*/);
             links.immediate_target.set(target);
         }
         links.immediate_target.get()
@@ -909,6 +910,9 @@ impl Checker {
                 }
                 Kind::CallSignature => {
                     self.error(Some(node), &diagnostics::CALL_SIGNATURE_WHICH_LACKS_RETURN_TYPE_ANNOTATION_IMPLICITLY_HAS_AN_ANY_RETURN_TYPE, &[]);
+                }
+                Kind::IndexSignature => {
+                    self.error(Some(node), &diagnostics::INDEX_SIGNATURE_WHICH_LACKS_TYPE_ANNOTATION_IMPLICITLY_HAS_AN_ANY_TYPE, &[]);
                 }
                 _ => {}
             }
@@ -3318,6 +3322,13 @@ impl Checker {
                 node,
                 &diagnostics::A_CLASS_DECLARATION_WITHOUT_THE_DEFAULT_MODIFIER_MUST_HAVE_A_NAME,
                 &[],
+            );
+        }
+        if !Self::container_allows_block_scoped_variable(node.parent().unwrap()) {
+            self.grammar_error_on_node(
+                node,
+                &diagnostics::X_0_DECLARATIONS_CAN_ONLY_BE_DECLARED_INSIDE_A_BLOCK,
+                &[&"class"],
             );
         }
         self.check_class_like_declaration(node);

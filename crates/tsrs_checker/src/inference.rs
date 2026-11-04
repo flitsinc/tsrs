@@ -1862,6 +1862,13 @@ impl Checker {
         let members = SymbolTable::new();
         let limited_constraint = self.get_limited_constraint(t);
         for prop in self.get_properties_of_type(r_source).iter().copied() {
+            // Private and protected properties are never produced by keyof, so they have no counterpart in a
+            // reverse mapped type. Copying them would surface them as public properties of the inferred type.
+            if get_declaration_modifier_flags_from_symbol(prop)
+                .intersects(ModifierFlags::NonPublicAccessibilityModifier)
+            {
+                continue;
+            }
             // In case of a reverse mapped type with an intersection constraint, if we were able to
             // extract the filtering type literals we skip those properties that are not assignable to them,
             // because the extra properties wouldn't get through the application of the mapped type anyway
