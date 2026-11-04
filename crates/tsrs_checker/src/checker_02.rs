@@ -47,7 +47,8 @@ impl Checker {
             let Some(node) = node else {
                 panic!("Unexpected nil in getImmediateAliasedSymbol");
             };
-            let target = self.get_target_of_alias_declaration(Some(node));
+            let target = self
+                .get_target_of_alias_declaration(Some(node), true /*dontRecursivelyResolve*/);
             links.immediate_target.set(target);
         }
         links.immediate_target.get()

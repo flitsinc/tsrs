@@ -2384,7 +2384,10 @@ impl Checker {
             }
             let target_symbol = self.resolve_alias(symbol);
             let alias_declaration = Self::get_declaration_of_alias_symbol(symbol);
-            let export_symbol = self.get_target_of_alias_declaration(alias_declaration);
+            let export_symbol = self.get_target_of_alias_declaration(
+                alias_declaration,
+                false, /*dontRecursivelyResolve*/
+            );
             // It only makes sense to get the type of a value symbol. If the result of resolving
             // the alias is not a value, then it has no type. To get the type associated with a
             // type symbol, call getDeclaredTypeOfSymbol.

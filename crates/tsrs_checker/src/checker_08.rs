@@ -1034,9 +1034,13 @@ impl Checker {
         module_symbol: P<Symbol>,
         node: P<Node>,
         module_specifier: P<Node>,
+        dont_recursively_resolve: bool,
     ) -> P<Symbol> {
         let mut symbol =
             self.resolve_external_module_symbol(module_symbol, true /*dontResolveAlias*/);
+        if dont_recursively_resolve {
+            return symbol;
+        }
         if ast::is_non_local_alias(
             symbol,
             SymbolFlags::Value | SymbolFlags::Type | SymbolFlags::Namespace,
@@ -1345,6 +1349,7 @@ impl Checker {
     pub(crate) fn get_target_of_alias_declaration(
         &mut self,
         node: Option<P<Node>>,
+        dont_recursively_resolve: bool,
     ) -> Option<P<Symbol>> {
         let node = node?;
         match node.kind() {
@@ -1352,8 +1357,12 @@ impl Checker {
                 self.get_target_of_import_equals_declaration(node)
             }
             Kind::ImportClause => self.get_target_of_import_clause(node),
-            Kind::NamespaceImport => self.get_target_of_namespace_import(node),
-            Kind::NamespaceExport => self.get_target_of_namespace_export(node),
+            Kind::NamespaceImport => {
+                self.get_target_of_namespace_import(node, dont_recursively_resolve)
+            }
+            Kind::NamespaceExport => {
+                self.get_target_of_namespace_export(node, dont_recursively_resolve)
+            }
             Kind::ImportSpecifier | Kind::BindingElement => {
                 self.get_target_of_import_specifier(node)
             }
@@ -2201,7 +2210,8 @@ impl Checker {
                     self.symbol_to_string(symbol)
                 );
             };
-            let mut target = self.get_target_of_alias_declaration(Some(node));
+            let mut target = self
+                .get_target_of_alias_declaration(Some(node), false /*dontRecursivelyResolve*/);
             if ast::is_non_local_alias(
                 target,
                 SymbolFlags::Value | SymbolFlags::Type | SymbolFlags::Namespace,

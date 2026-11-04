@@ -658,8 +658,11 @@ impl NodeBuilderImpl {
             // Handle alias/re-export symbols
             if m.flags().intersects(SymbolFlags::Alias) {
                 let alias_decl = checker::Checker::get_declaration_of_alias_symbol(m);
-                let target =
-                    c.get_target_of_alias_declaration(alias_decl).map(|t| c.get_merged_symbol(t));
+                let target = c
+                    .get_target_of_alias_declaration(
+                        alias_decl, false, /*dontRecursivelyResolve*/
+                    )
+                    .map(|t| c.get_merged_symbol(t));
                 if let Some(target) = target {
                     // If the alias target is a local symbol (not itself an export), emit its declaration first
                     if target.flags().intersects(
