@@ -1114,6 +1114,10 @@ impl BuildInfoRootInfoReader {
     pub fn roots(&self) -> impl Iterator<Item = &Path> {
         self.root_to_resolved.keys()
     }
+
+    pub fn has_root(&self, path: &str) -> bool {
+        self.root_to_resolved.contains_key(path)
+    }
 }
 
 // JSON helpers.
