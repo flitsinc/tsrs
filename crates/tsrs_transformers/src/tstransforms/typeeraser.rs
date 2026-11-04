@@ -449,10 +449,15 @@ impl TypeEraserTransformer {
             }
 
             Kind::EnumDeclaration => {
-                if ast::is_enum_const(node) {
+                if !ast::is_enum_const(node) {
+                    return v.visit_each_child(Some(node));
+                }
+                if !self.compiler_options.should_preserve_const_enums() {
                     return Some(node);
                 }
-                v.visit_each_child(Some(node))
+                // Preserve the const modifier for the runtime syntax transform.
+                let n = node.as_enum_declaration();
+                Some(f.update_enum_declaration(node, node.modifiers(), n.name, v.visit_nodes(Some(n.members)).unwrap()))
             }
 
             _ => v.visit_each_child(Some(node)),
