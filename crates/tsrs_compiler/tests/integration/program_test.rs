@@ -143,6 +143,61 @@ fn config_for(files: &[(&str, &str)]) -> P<tsoptions::ParsedCommandLine> {
     P::new(config.unwrap())
 }
 
+#[test]
+fn shared_graph_materializes_lazy_members_in_each_fork() {
+    if !tsrs_core::sharedgraph::COMPILED_IN {
+        return;
+    }
+    const CHILD: &str = "TSRS_LAZY_LAYOUT_FORK_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "program_test::shared_graph_materializes_lazy_members_in_each_fork"])
+            .env(CHILD, "1")
+            .env("TSRS_SHARED_GRAPH_PROTECT", "1")
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    let files = [
+        (
+            "/src/tsconfig.json",
+            r#"{"compilerOptions":{"noLib":true,"singleThreaded":true},"files":["index.ts"]}"#,
+        ),
+        ("/src/index.ts", "interface Pair<T> { first: T; second: number; (): void }"),
+    ];
+    let program = new_program(ProgramOptions::new(config_for(&files), host_for(&files)));
+    program.bind_source_files();
+    let file = program.get_source_file("/src/index.ts").unwrap();
+    let symbol = file.statements()[0].symbol().unwrap();
+    let region = tsrs_core::arena::Region::new_scratch(32 << 20);
+    let scope = region.enter();
+    let mut seed = tsrs_checker::new_checker(program);
+    tsrs_core::sharedgraph::enter_overlay(&seed.overlay);
+    let t = seed.get_declared_type_of_symbol(symbol);
+    assert_eq!(seed.get_signatures_of_type(t, tsrs_checker::SignatureKind::Call).len(), 1);
+    tsrs_core::sharedgraph::leave_overlay();
+    drop(scope);
+    let chunks = region.chunks();
+    #[expect(
+        clippy::mem_forget,
+        reason = "forks retain the frozen seed region until this isolated process exits"
+    )]
+    std::mem::forget(region);
+    let seed = Box::leak(seed);
+    tsrs_core::sharedgraph::freeze(&chunks);
+    for _ in 0..2 {
+        let mut fork = tsrs_checker::Checker::fork(seed);
+        tsrs_core::sharedgraph::enter_overlay(&fork.overlay);
+        let members = t.as_structured_type().members(&mut fork).unwrap();
+        assert_eq!(members.len(), 2);
+        assert!(members.lookup("first").is_some());
+        assert!(members.lookup("second").is_some());
+        assert_eq!(fork.get_properties_of_type(t).len(), 2);
+        tsrs_core::sharedgraph::leave_overlay();
+    }
+}
+
 // A pool outside the built-in one: hands out checkers through `CheckerHandle::from_raw` and takes them back on
 // release, like the project system's pool.
 struct TestPool {

@@ -2703,9 +2703,30 @@ impl Checker {
     #[cfg_attr(feature = "site-counts", track_caller)]
     pub(crate) fn get_properties_of_object_type(&mut self, t: P<Type>) -> &'static [P<Symbol>] {
         if t.flags().intersects(TypeFlags::Object) {
-            return self.resolve_structured_type_members(t).properties();
+            return self.resolve_structured_type_members(t).properties(self);
         }
         &[]
+    }
+
+    pub(crate) fn get_layout_properties_of_type(&mut self, t: P<Type>) -> &'static [P<Symbol>] {
+        let t = self.get_reduced_apparent_type(t);
+        let Some(lazy) = self.get_lazy_state_of_type(t) else {
+            return self.get_properties_of_type(t);
+        };
+        let layout = lazy.layout;
+        if layout.layout_properties.get().is_none() {
+            layout
+                .layout_properties
+                .set(Some(alloc_vec(layout.member_infos.iter().map(|info| info.symbol).collect())));
+        }
+        layout.layout_properties.get().unwrap()
+    }
+
+    pub(crate) fn get_lazy_state_of_type(&mut self, t: P<Type>) -> Option<P<LazyState>> {
+        if t.flags().intersects(TypeFlags::Object) {
+            return self.resolve_structured_type_members(t).get_lazy_state();
+        }
+        None
     }
 
     // checker.go:19205
@@ -2802,7 +2823,7 @@ impl Checker {
         if t.flags().intersects(TypeFlags::Object) {
             let key = HashedName::new(name);
             let symbol = if t.object_flags_lazy().intersects(ObjectFlags::MembersResolved) {
-                t.as_structured_type().members().and_then(|m| m.lookup_hashed(key))
+                t.as_structured_type().get_member(self, name)
             } else {
                 self.get_member_of_unresolved_structured_type(t, name, instantiate)
             };
@@ -2880,6 +2901,9 @@ impl Checker {
     /// relater's walks over a target's properties): `t` must be a plain object type (its own reduced apparent type)
     /// with resolved members and no module symbol, so that `get_property_of_type` answers from the table alone.
     pub(crate) fn resolved_property_source(&self, t: P<Type>) -> Option<ResolvedPropertySource> {
+        if t.try_as_structured_type().is_some_and(|s| s.get_lazy_state().is_some()) {
+            return None;
+        }
         if t.flags() != TypeFlags::Object
             || t.object_flags().intersects(ObjectFlags::Mapped)
             || !t.object_flags_lazy().intersects(ObjectFlags::MembersResolved)
@@ -2889,7 +2913,7 @@ impl Checker {
         }
         Some(ResolvedPropertySource {
             t,
-            members: t.as_structured_type().members(),
+            members: t.as_structured_type().raw_members(),
             epoch: self.members_reset_epoch,
         })
     }
@@ -2936,7 +2960,10 @@ impl Checker {
         {
             return None;
         }
-        match t.as_structured_type().members().and_then(|m| m.lookup_hashed(key)) {
+        if t.as_structured_type().get_lazy_state().is_some() {
+            return None;
+        }
+        match t.as_structured_type().raw_members().and_then(|m| m.lookup_hashed(key)) {
             Some(symbol) if symbol.flags().intersects(SymbolFlags::Value) => Some(Some(symbol)),
             None if skip_object_function_property_augment || !self.may_be_augment_member(key) => {
                 Some(None)
@@ -2992,7 +3019,7 @@ impl Checker {
             if !t.flags().intersects(TypeFlags::Object) {
                 continue; // get_property_of_object_type finds nothing in it
             }
-            if let Some(members) = self.resolve_structured_type_members(t).members() {
+            if let Some(members) = self.resolve_structured_type_members(t).members(self) {
                 filter.add_keys(&members);
             }
         }
@@ -3319,10 +3346,10 @@ impl Checker {
         if !t.object_flags_lazy().intersects(ObjectFlags::MembersResolved) {
             self.members_resolving += 1;
             if t.flags().intersects(TypeFlags::Object) {
-                if t.object_flags().intersects(ObjectFlags::Reference) {
-                    self.resolve_type_reference_members(t);
-                } else if t.object_flags().intersects(ObjectFlags::ClassOrInterface) {
-                    self.resolve_class_or_interface_members(t);
+                if t.object_flags()
+                    .intersects(ObjectFlags::ClassOrInterface | ObjectFlags::Reference)
+                {
+                    self.resolve_object_type_members(t);
                 } else if t.object_flags().intersects(ObjectFlags::ReverseMapped) {
                     self.resolve_reverse_mapped_type_members(t);
                 } else if t.object_flags().intersects(ObjectFlags::Anonymous) {
@@ -3344,52 +3371,27 @@ impl Checker {
         t.as_structured_type()
     }
 
-    // checker.go:19435
-    fn resolve_class_or_interface_members(&mut self, t: P<Type>) {
-        self.resolve_object_type_members(t, t, &[], &[]);
-    }
-
-    // checker.go:19439
-    #[cfg_attr(feature = "site-counts", track_caller)]
-    fn resolve_type_reference_members(&mut self, t: P<Type>) {
-        if let Some(lm) =
-            self.lazy_member_tables.get(&t).filter(|lm| lm.ready.get().is_some()).copied()
-        {
-            let lm = self.own_lazy_member_table(t, lm);
-            self.resolve_lazy_members(t, lm);
-            return;
-        }
-        let source = t.target().unwrap();
-        let (type_parameters, padded_type_arguments) =
-            self.get_reference_member_type_arguments(t, source);
-        self.resolve_object_type_members(t, source, type_parameters, &padded_type_arguments);
-    }
-
     // checker.go:19450
-    fn resolve_object_type_members(
-        &mut self,
-        t: P<Type>,
-        source: P<Type>,
-        type_parameters: &[P<Type>],
-        type_arguments: &[P<Type>],
-    ) {
+    fn resolve_object_type_members(&mut self, t: P<Type>) {
+        let source = get_target_type(t).unwrap();
+        let (type_parameters, type_arguments) =
+            if t.object_flags().intersects(ObjectFlags::Reference) {
+                self.get_reference_member_type_arguments(t, source)
+            } else {
+                (&[][..], Vec::new())
+            };
         let mut mapper: Option<P<TypeMapper>> = None;
-        let mut members: Option<P<SymbolTable>>;
         let mut call_signatures: Vec<P<Signature>>;
         let mut construct_signatures: Vec<P<Signature>>;
         let mut index_infos: Vec<P<IndexInfo>>;
-        let mut instantiated = false;
         let resolved = self.resolve_declared_members(source);
         if type_parameters == type_arguments {
-            members = resolved.declared_members.get();
             call_signatures = resolved.declared_call_signatures.get().to_vec();
             construct_signatures = resolved.declared_construct_signatures.get().to_vec();
             index_infos = resolved.declared_index_infos.get().to_vec();
         } else {
-            instantiated = true;
-            let m = new_type_mapper(alloc_slice(type_parameters), alloc_slice(type_arguments));
+            let m = new_type_mapper(alloc_slice(type_parameters), alloc_slice(&type_arguments));
             mapper = Some(m);
-            members = self.instantiate_symbol_table(resolved.declared_members.get(), m);
             call_signatures =
                 self.instantiate_signatures(resolved.declared_call_signatures.get(), m);
             construct_signatures =
@@ -3397,38 +3399,142 @@ impl Checker {
             index_infos = self.instantiate_index_infos(resolved.declared_index_infos.get(), m);
         }
         let base_types = self.get_base_types(source);
-        if !base_types.is_empty() {
-            if !instantiated {
-                members = members.map(|m| m.clone_table());
-            }
-            let this_argument = type_arguments.last().copied();
+        let this_argument = type_arguments.last().copied();
+        let instantiated_base_types = if !base_types.is_empty() && this_argument.is_some() {
+            let mut instantiated_base_types = Vec::with_capacity(base_types.len());
             for &base_type in base_types {
-                let mut instantiated_base_type = base_type;
-                if this_argument.is_some() {
-                    let inst = self.instantiate_type(base_type, mapper);
-                    instantiated_base_type = self.get_type_with_this_argument(
-                        inst,
-                        this_argument,
-                        false, /*needsApparentType*/
-                    );
-                }
-                let base_properties = self.get_properties_of_type(instantiated_base_type);
-                members = Self::add_inherited_members(members, base_properties);
-                self.append_inherited_signatures_and_index_infos(
-                    &mut call_signatures,
-                    &mut construct_signatures,
-                    &mut index_infos,
-                    instantiated_base_type,
-                );
+                let inst = self.instantiate_type(base_type, mapper);
+                instantiated_base_types.push(self.get_type_with_this_argument(
+                    inst,
+                    this_argument,
+                    false,
+                ));
             }
+            alloc_vec(instantiated_base_types)
+        } else {
+            base_types
+        };
+        // Layout must be computed before inherited signatures, which can circularly depend on it.
+        let layout = self.get_member_layout(t, instantiated_base_types);
+        for &instantiated_base_type in instantiated_base_types {
+            self.append_inherited_signatures_and_index_infos(
+                &mut call_signatures,
+                &mut construct_signatures,
+                &mut index_infos,
+                instantiated_base_type,
+            );
         }
         self.set_structured_type_members(
             t,
-            members,
+            None,
             &call_signatures,
             &construct_signatures,
             &index_infos,
         );
+        t.as_structured_type().set_lazy_state(P::new(LazyState {
+            layout,
+            mapper: {
+                let cell = MapperCell::default();
+                cell.set(mapper);
+                cell
+            },
+            base_types: instantiated_base_types,
+            properties_resolved: Default::default(),
+            properties: tsrs_core::sharedgraph::OvExact::new(&[]),
+        }));
+    }
+
+    fn get_member_layout(&mut self, t: P<Type>, base_types: &[P<Type>]) -> P<MemberLayout> {
+        if !t.object_flags().intersects(ObjectFlags::Reference) {
+            return self.create_member_layout(t, base_types);
+        }
+        let source = get_target_type(t).unwrap();
+        let key = self.get_member_layout_key(source, base_types);
+        if let Some(&layout) = self.member_layout_cache.get(&key) {
+            return layout;
+        }
+        let layout = self.create_member_layout(source, base_types);
+        self.member_layout_cache.insert(key, layout);
+        layout
+    }
+
+    fn get_member_layout_key(&mut self, t: P<Type>, base_types: &[P<Type>]) -> CacheHashKey {
+        let mut b = KeyBuilder::default();
+        b.reserve(20 + 5 * base_types.len());
+        b.write_type(t);
+        b.write_usize(t.as_interface_type().declared_members.get().map_or(0, |m| m.len()));
+        b.write_usize(base_types.len());
+        for &base_type in base_types {
+            if base_type.object_flags().intersects(ObjectFlags::Reference) {
+                let lazy =
+                    self.resolve_structured_type_members(base_type).get_lazy_state().unwrap();
+                b.write_byte(b'+');
+                b.write_uint32(lazy.layout.id);
+            } else {
+                b.write_byte(b'-');
+                b.write_type(base_type);
+            }
+        }
+        b.hash()
+    }
+
+    fn create_member_layout(&mut self, t: P<Type>, base_types: &[P<Type>]) -> P<MemberLayout> {
+        let mut infos = FxHashMap::default();
+        if let Some(declared) = t.as_interface_type().declared_members.get() {
+            for (name, symbol) in declared.entries() {
+                if self.is_named_member(symbol, name) {
+                    infos.entry(symbol.name()).or_insert(MemberInfo {
+                        symbol,
+                        base_index: None,
+                        slot_index: 0,
+                    });
+                }
+            }
+        }
+        for (base_index, &base_type) in base_types.iter().enumerate() {
+            let properties = if base_type
+                .object_flags()
+                .intersects(ObjectFlags::Reference | ObjectFlags::ClassOrInterface)
+            {
+                let layout = self
+                    .resolve_structured_type_members(base_type)
+                    .get_lazy_state()
+                    .unwrap()
+                    .layout;
+                layout.member_infos.iter().map(|info| info.symbol).collect::<Vec<_>>()
+            } else {
+                self.get_properties_of_type(base_type).to_vec()
+            };
+            for symbol in properties {
+                if !is_static_private_identifier_property(symbol) {
+                    infos.entry(symbol.name()).or_insert(MemberInfo {
+                        symbol,
+                        base_index: Some(base_index),
+                        slot_index: 0,
+                    });
+                }
+            }
+        }
+        let mut member_infos: Vec<MemberInfo> = infos.into_values().collect();
+        member_infos.sort_by(|a, b| match (a.base_index, b.base_index) {
+            (None, Some(_)) => std::cmp::Ordering::Less,
+            (Some(_), None) => std::cmp::Ordering::Greater,
+            _ => self.compare_symbols(Some(a.symbol), Some(b.symbol)),
+        });
+        let mut member_info_map = Vec::with_capacity(member_infos.len());
+        for (index, info) in member_infos.iter_mut().enumerate() {
+            info.slot_index = index;
+            member_info_map.push((info.symbol.name(), index));
+        }
+        member_info_map.sort_unstable_by_key(|&(name, _)| name);
+        let layout = P::new(MemberLayout {
+            id: self.member_layout_count,
+            member_info_map: alloc_vec(member_info_map),
+            member_infos: alloc_vec(member_infos),
+            layout_properties: Default::default(),
+        });
+        self.member_layout_count += 1;
+        layout
     }
 }
 
@@ -3555,6 +3661,10 @@ impl Checker {
 
     // Returns nil if t has no lazy member table or it is still being prepared.
     pub(crate) fn get_ready_lazy_member_table(&mut self, t: P<Type>) -> Option<P<LazyMemberTable>> {
+        if t.object_flags().intersects(ObjectFlags::ClassOrInterface | ObjectFlags::Reference) {
+            self.resolve_structured_type_members(t);
+            return None;
+        }
         if !self.lazy_members || !may_have_lazy_members(t) {
             return None;
         }
@@ -3902,7 +4012,7 @@ impl Checker {
         instantiate: bool,
     ) -> Option<P<Symbol>> {
         if t.object_flags_lazy().intersects(ObjectFlags::MembersResolved) {
-            return t.as_structured_type().members()?.lookup(name);
+            return t.as_structured_type().get_member(self, name);
         }
         self.get_member_of_unresolved_structured_type(t, name, instantiate)
     }
@@ -3925,7 +4035,7 @@ impl Checker {
         }
         let lm = self.get_ready_lazy_member_table(t);
         let Some(lm) = lm.filter(|_| !is_reserved_member_name(name)) else {
-            return self.resolve_structured_type_members(t).members()?.lookup(name);
+            return self.resolve_structured_type_members(t).get_member(self, name);
         };
         self.lazy_member_stats.member_lookups += 1;
         // The declared member, else the first base type's property (see addInheritedMembers).
@@ -3976,7 +4086,7 @@ impl Checker {
             }
             return result;
         }
-        let properties = self.resolve_structured_type_members(t).properties();
+        let properties = self.get_layout_properties_of_type(t);
         properties.iter().all(|&p| f(self, p))
     }
 

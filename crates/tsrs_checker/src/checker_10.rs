@@ -2223,7 +2223,7 @@ impl Checker {
             }
             if symbol.flags().intersects(SymbolFlags::Enum)
                 && (self.get_declared_type_of_symbol(symbol).flags().intersects(TypeFlags::Enum)
-                    || d.properties().iter().any(|prop| {
+                    || d.properties(self).iter().any(|prop| {
                         self.get_type_of_symbol(*prop).flags().intersects(TypeFlags::NumberLike)
                     }))
             {
@@ -2274,23 +2274,6 @@ impl Checker {
         Some(result)
     }
 
-    // checker.go:21081
-    pub(crate) fn instantiate_symbol_table(
-        &mut self,
-        symbols: Option<P<SymbolTable>>,
-        m: P<TypeMapper>,
-    ) -> Option<P<SymbolTable>> {
-        let symbols = symbols.filter(|s| !s.is_empty())?;
-        let result = SymbolTable::with_capacity(symbols.len());
-        for (id, symbol) in symbols.entries() {
-            if self.is_named_member(symbol, id) {
-                let instantiated = self.instantiate_symbol(symbol, Some(m));
-                result.set(id, instantiated);
-            }
-        }
-        Some(result)
-    }
-
     // checker.go:21094
     #[cfg_attr(feature = "site-counts", track_caller)]
     pub(crate) fn instantiate_symbol(
@@ -2298,7 +2281,7 @@ impl Checker {
         symbol: P<Symbol>,
         m: Option<P<TypeMapper>>,
     ) -> P<Symbol> {
-        if self.is_symbol_unaffected_by_instantiation(symbol, m) {
+        if m.is_none() || self.is_symbol_unaffected_by_instantiation(symbol, m) {
             return symbol;
         }
         self.new_instantiated_symbol(symbol, m)
@@ -2832,7 +2815,7 @@ impl Checker {
         lazy.members.borrow_mut().insert(name.to_string(), None);
         let modifiers_prop = self.get_member_of_structured_type(lazy.modifiers_type, name);
         if t.object_flags_lazy().intersects(ObjectFlags::MembersResolved) {
-            return Some(t.as_structured_type().members().and_then(|m| m.lookup(name)));
+            return Some(t.as_structured_type().get_member(self, name));
         }
         let mut member = None;
         if let Some(modifiers_prop) = modifiers_prop
@@ -3735,7 +3718,7 @@ impl Checker {
     ) -> Option<P<Symbol>> {
         if t.flags().intersects(TypeFlags::Object) {
             let resolved = self.resolve_structured_type_members(t);
-            let symbol = resolved.members().and_then(|m| m.lookup_hashed(key));
+            let symbol = resolved.get_member(self, key.name());
             if let Some(symbol) = symbol
                 && self.symbol_is_value(symbol)
             {

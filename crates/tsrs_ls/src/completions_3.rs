@@ -1379,7 +1379,7 @@ fn set_member_declared_by_spread_assignment(
     if let Some(t) = t
         && t.flags().intersects(TypeFlags::StructuredType)
     {
-        properties = t.as_structured_type().properties();
+        properties = t.as_structured_type().properties(type_checker);
     }
     members.extend(properties.iter().map(|property| property.name().to_string()));
 }

@@ -1252,6 +1252,9 @@ pub struct Checker {
     pub(crate) pattern_for_type: FxHashMap<P<Type>, P<Node>>,
     pub(crate) lazy_member_tables:
         crate::basedmap::Based<FxHashMap<P<Type>, P<LazyMemberTable>>, P<Type>>,
+    pub(crate) member_layout_cache:
+        crate::basedmap::Based<FxHashMap<CacheHashKey, P<MemberLayout>>, CacheHashKey>,
+    pub(crate) member_layout_count: u32,
     /// Per generic target, what `prepare_lazy_members` learned about its declared members for good
     /// (`lazy_unaffected_members`).
     pub(crate) lazy_unaffected: FxHashMap<P<Type>, crate::checker_09::LazyUnaffected>,
@@ -1767,6 +1770,8 @@ pub fn new_checker(program: &'static dyn Program) -> Box<Checker> {
         reg_exp_scanner: None,
         pattern_for_type: FxHashMap::default(),
         lazy_member_tables: crate::basedmap::Based::default(),
+        member_layout_cache: crate::basedmap::Based::default(),
+        member_layout_count: 0,
         lazy_unaffected: FxHashMap::default(),
         object_types_without_abstract_construct_signatures: FxHashMap::default(),
         structured_type_base_constraints: FxHashMap::default(),
@@ -2309,6 +2314,8 @@ impl Checker {
             reg_exp_scanner: None,
             pattern_for_type: base.pattern_for_type.clone(),
             lazy_member_tables: crate::basedmap::Based::over(&base.lazy_member_tables),
+            member_layout_cache: crate::basedmap::Based::over(&base.member_layout_cache),
+            member_layout_count: base.member_layout_count,
             lazy_unaffected: FxHashMap::default(),
             object_types_without_abstract_construct_signatures: base
                 .object_types_without_abstract_construct_signatures

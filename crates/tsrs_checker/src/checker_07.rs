@@ -997,7 +997,7 @@ impl Checker {
         let left_len = if left.flags().intersects(TypeFlags::Object)
             && left.object_flags_lazy().intersects(ObjectFlags::MembersResolved)
         {
-            left.as_structured_type().properties().len()
+            left.as_structured_type().properties(self).len()
         } else {
             0
         };
