@@ -25,3 +25,10 @@ Its fixture set is:
 - `uniqueSymbolPropertyNameFromReexportedModule`
 
 Validation receipts are recorded separately from the upstream fixture inventory.
+
+## Protected optional property completions (#65055)
+
+Upstream `9fa923a8446b2f4b141b2e255802b70e0de41d6c` changes only
+`TestCompletionsOverridingProperties1`. The pinned Go fourslash harness executes
+that test against the Rust language server, including its optional protected
+property cases. No runtime port or copied fixture is needed.
