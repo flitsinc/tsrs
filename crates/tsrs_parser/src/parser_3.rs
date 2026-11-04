@@ -796,7 +796,8 @@ impl Parser {
             operator_token,
             right,
         );
-        self.finish_node(node, pos)
+        let node = self.finish_node(node, pos);
+        self.check_common_js_module_indicator(node)
     }
 
     #[inline]
@@ -2034,7 +2035,8 @@ impl Parser {
                     if is_optional_chain { NodeFlags::OptionalChain } else { NodeFlags::None },
                 );
                 let node = self.finish_node(node, pos);
-                expression = self.check_js_syntax(node);
+                let node = self.check_js_syntax(node);
+                expression = self.check_common_js_module_indicator(node);
                 Self::unparse_expression_with_type_arguments(
                     Some(inner),
                     type_arguments,

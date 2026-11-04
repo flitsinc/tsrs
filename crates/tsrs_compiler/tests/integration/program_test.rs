@@ -143,6 +143,24 @@ fn config_for(files: &[(&str, &str)]) -> P<tsoptions::ParsedCommandLine> {
     P::new(config.unwrap())
 }
 
+#[test]
+fn update_program_common_js_file() {
+    let config = r#"{"compilerOptions":{"allowJs":true,"noLib":true},"files":["index.js"]}"#;
+    let files = [("/src/tsconfig.json", config), ("/src/index.js", "exports.a = 1;")];
+    let mut program = new_program(ProgramOptions::new(config_for(&files), host_for(&files)));
+    program.bind_source_files();
+    for (content, expected_reuse) in
+        [("exports.a = 2;", true), ("var a = 2;", false), ("exports.a = 2;", false)]
+    {
+        let edited = [files[0], ("/src/index.js", content)];
+        let (next, _, reused) =
+            program.update_program(&Path::from("/src/index.js"), host_for(&edited), None, None);
+        next.bind_source_files();
+        assert_eq!(reused, expected_reuse, "{content}");
+        program = next;
+    }
+}
+
 // A pool outside the built-in one: hands out checkers through `CheckerHandle::from_raw` and takes them back on
 // release, like the project system's pool.
 struct TestPool {
