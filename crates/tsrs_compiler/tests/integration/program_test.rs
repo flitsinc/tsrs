@@ -33,6 +33,47 @@ fn host_for(files: &[(&str, &str)]) -> Arc<dyn CompilerHost> {
 }
 
 #[test]
+fn checker_error_deduplication_preserves_attempts_and_serialization_suppression() {
+    use tsrs_ast::DiagnosticExt;
+    use tsrs_checker::checker::MAX_SERIALIZATION_LEVEL;
+    use tsrs_diagnostics as diagnostics;
+
+    let files = [
+        ("/src/tsconfig.json", r#"{"compilerOptions":{"noLib":true},"files":["a.ts"]}"#),
+        ("/src/a.ts", "export {};"),
+    ];
+    let program = new_program(ProgramOptions::new(config_for(&files), host_for(&files)));
+    let mut checker = program.get_type_checker(&Context::default());
+    let original_count = checker.get_global_diagnostics().len();
+    let attempts = checker.diagnostic_adds;
+    let message = &diagnostics::TYPE_INSTANTIATION_IS_EXCESSIVELY_DEEP_AND_POSSIBLY_INFINITE;
+    let first = checker.error(None, message, &[]);
+    assert_eq!(checker.diagnostic_adds, attempts.wrapping_add(1));
+    assert_eq!(checker.error(None, message, &[]), first);
+    assert_eq!(checker.diagnostic_adds, attempts.wrapping_add(2));
+    assert_eq!(checker.get_global_diagnostics().len(), original_count + 1);
+
+    let level = checker.serialization_level;
+    checker.serialization_level = MAX_SERIALIZATION_LEVEL;
+    let suppressed = checker.error(None, message, &[]);
+    let another_suppressed = checker.error(None, message, &[]);
+    assert_eq!(checker.diagnostic_adds, attempts.wrapping_add(4));
+    assert_ne!(suppressed, first);
+    assert_ne!(another_suppressed, suppressed);
+    assert_ne!(another_suppressed, first);
+    suppressed.add_related_info(tsrs_ast::new_compiler_diagnostic(
+        &diagnostics::X_0_IS_DECLARED_HERE,
+        &[&"suppressed"],
+    ));
+    assert_eq!(first.related_information(), []);
+    assert_eq!(another_suppressed.related_information(), []);
+    assert_eq!(checker.get_global_diagnostics().len(), original_count + 1);
+    checker.serialization_level = level;
+    assert_eq!(checker.error(None, message, &[]), first);
+    assert_eq!(checker.diagnostic_adds, attempts.wrapping_add(5));
+}
+
+#[test]
 fn later_relative_import_restarts_package_imports_at_lower_depth() {
     let files = [
         (

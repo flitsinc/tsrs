@@ -1085,7 +1085,7 @@ pub struct VarianceStackEntry {
     pub(crate) type_parameters: &'static [P<Type>],
 }
 
-pub(crate) const MAX_SERIALIZATION_LEVEL: u32 = 2;
+pub const MAX_SERIALIZATION_LEVEL: u32 = 2;
 
 // Checker
 
@@ -1115,7 +1115,7 @@ pub struct Checker {
     pub(crate) infer_memo: crate::infermemo::InferMemo,
     /// Calls of `add_diagnostic` and `add_suggestion_diagnostic`, duplicates included (wrapping): the inference memo
     /// stores only walks that added none.
-    pub(crate) diagnostic_adds: u32,
+    pub diagnostic_adds: u32,
     /// tsrs-only: TS2590 reports so far (wrapping; `Checker::too_complex_since`).
     pub(crate) too_complex_reports: u32,
     /// tsrs-only: the TS2590 sites recorded since the last flush, reported when the file being checked is done
@@ -1129,7 +1129,7 @@ pub struct Checker {
     pub(crate) instantiation_stack: Vec<P<Type>>,
     pub(crate) conditional_constraint_depth: u32,
     pub(crate) inline_level: u32,
-    pub(crate) serialization_level: u32,
+    pub serialization_level: u32,
     pub(crate) current_node: Option<P<Node>>,
     /// tsrs-only: the file `check_source_file` is checking. The one check leaf (`SourceFile::is_check_leaf`) whose tree
     /// this checker may read.
