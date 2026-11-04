@@ -597,13 +597,15 @@ impl Checker {
                     import_attributes_type,
                 );
             }
-            let pattern_ambient_module = self.try_resolve_pattern_ambient_module(
-                None, /*resolvedSymbol*/
-                module_reference,
-                import_attributes_type,
-            );
-            if pattern_ambient_module.is_some() {
-                return pattern_ambient_module;
+            if !self.is_empty_object_type(import_attributes_type) {
+                let pattern_ambient_module = self.try_resolve_pattern_ambient_module(
+                    None, /*resolvedSymbol*/
+                    module_reference,
+                    import_attributes_type,
+                );
+                if pattern_ambient_module.is_some() {
+                    return pattern_ambient_module;
+                }
             }
             if let Some(error_node) = error_node
                 && module_not_found_error.is_some()
