@@ -2050,7 +2050,10 @@ impl Server {
             Some(lsproto::WorkspaceFoldersOrNull { workspace_folders: Some(folders) }) => folders
                 .iter()
                 .map(|folder| tsrs_ls::WorkspaceFolder {
-                    path: file_name_or_empty(&lsproto::DocumentUri(folder.uri.0.clone())),
+                    path: tspath::get_normalized_absolute_path(
+                        &file_name_or_empty(&lsproto::DocumentUri(folder.uri.0.clone())),
+                        "",
+                    ),
                     name: folder.name.clone(),
                 })
                 .collect(),
@@ -4055,17 +4058,20 @@ fn get_initial_workspace_roots(params: &lsproto::InitializeParams) -> Vec<String
     {
         for folder in folders {
             if folder.uri.0.starts_with("file://") {
-                roots.push(file_name_or_empty(&lsproto::DocumentUri(folder.uri.0.clone())));
+                roots.push(tspath::get_normalized_absolute_path(
+                    &file_name_or_empty(&lsproto::DocumentUri(folder.uri.0.clone())),
+                    "",
+                ));
             }
         }
     } else if let Some(uri) = &params.root_uri.document_uri
         && uri.0.starts_with("file://")
     {
-        roots.push(file_name_or_empty(uri));
+        roots.push(tspath::get_normalized_absolute_path(&file_name_or_empty(uri), ""));
     } else if let Some(lsproto::StringOrNull { string: Some(path) }) = &params.root_path
         && tspath::path_is_absolute(path)
     {
-        roots.push(path.clone());
+        roots.push(tspath::get_normalized_absolute_path(path, ""));
     }
     roots
 }
