@@ -733,6 +733,11 @@ impl RuntimeSyntaxTransformer {
         let f = self.factory();
         let emit_context = self.emit_context();
         let module_reference = f.create_expression_from_entity_name(n.module_reference);
+        let module_reference = if ast::is_identifier(module_reference) {
+            self.visit_expression_identifier(module_reference)
+        } else {
+            self.visitor().visit_node(Some(module_reference)).unwrap()
+        };
         emit_context
             .set_emit_flags(module_reference, EmitFlags::NoComments | EmitFlags::NoNestedComments);
         if self.is_export_of_namespace(node) {
