@@ -788,7 +788,6 @@ impl BuildTask {
             let frees = watch || orchestrator.frees_built_programs();
             program_options.checker_regions = frees;
             // `watch_full_build` keeps the parents of the synthetic imports the reused programs keep.
-            program_options.reuse_synthetic_imports = watch;
             program_options.checker_diagnostic_regions =
                 watch && orchestrator.opts.testing.is_none();
             regions = frees.then(|| Arc::new(tsrs_compiler::ProgramRegions::default()));
