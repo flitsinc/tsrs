@@ -910,6 +910,9 @@ impl Checker {
                 Kind::CallSignature => {
                     self.error(Some(node), &diagnostics::CALL_SIGNATURE_WHICH_LACKS_RETURN_TYPE_ANNOTATION_IMPLICITLY_HAS_AN_ANY_RETURN_TYPE, &[]);
                 }
+                Kind::IndexSignature => {
+                    self.error(Some(node), &diagnostics::INDEX_SIGNATURE_WHICH_LACKS_TYPE_ANNOTATION_IMPLICITLY_HAS_AN_ANY_TYPE, &[]);
+                }
                 _ => {}
             }
         }
