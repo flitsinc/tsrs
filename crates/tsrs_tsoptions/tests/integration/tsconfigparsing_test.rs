@@ -1936,7 +1936,7 @@ fn test_content_mappers_validation() {
         (
             "built-in extension",
             r#"[{ "package": "x", "extensions": [".ts"] }]"#,
-            diagnostics::CONTENT_MAPPER_FILE_EXTENSION_0_IS_A_BUILT_IN_EXTENSION_AND_CANNOT_BE_REGISTERED_BY_A_CONTENT_MAPPER.code(),
+            diagnostics::CONTENT_MAPPER_FILE_EXTENSION_0_CANNOT_BE_REGISTERED_BECAUSE_IT_ENDS_IN_A_BUILT_IN_EXTENSION.code(),
         ),
         ("missing extensions", r#"[{ "package": "x" }]"#, diagnostics::COMPILER_OPTION_0_REQUIRES_A_VALUE_OF_TYPE_1.code()),
         (
@@ -2063,7 +2063,7 @@ fn test_content_mapper_extension_validation_uses_host_case_sensitivity() {
             "built-in extension on case-insensitive host",
             false,
             r#"[{ "package": "mapper", "extensions": [".TS"] }]"#,
-            diagnostics::CONTENT_MAPPER_FILE_EXTENSION_0_IS_A_BUILT_IN_EXTENSION_AND_CANNOT_BE_REGISTERED_BY_A_CONTENT_MAPPER.code(),
+            diagnostics::CONTENT_MAPPER_FILE_EXTENSION_0_CANNOT_BE_REGISTERED_BECAUSE_IT_ENDS_IN_A_BUILT_IN_EXTENSION.code(),
         ),
         (
             "duplicate extension on case-insensitive host",
@@ -2075,7 +2075,7 @@ fn test_content_mapper_extension_validation_uses_host_case_sensitivity() {
             "built-in extension on case-sensitive host",
             true,
             r#"[{ "package": "mapper", "extensions": [".TS"] }]"#,
-            diagnostics::CONTENT_MAPPER_FILE_EXTENSION_0_IS_A_BUILT_IN_EXTENSION_AND_CANNOT_BE_REGISTERED_BY_A_CONTENT_MAPPER.code(),
+            diagnostics::CONTENT_MAPPER_FILE_EXTENSION_0_CANNOT_BE_REGISTERED_BECAUSE_IT_ENDS_IN_A_BUILT_IN_EXTENSION.code(),
         ),
         (
             "mapper extension casing is distinct on case-sensitive host",
