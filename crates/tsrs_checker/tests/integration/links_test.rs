@@ -23,6 +23,24 @@ fn link_store_preserves_nil_key_through_growth() {
 }
 
 #[test]
+fn merged_symbol_links_fork_without_changing_the_seed() {
+    let source = Symbol::new(SymbolFlags::Property, "source");
+    let original = Symbol::new(SymbolFlags::Property, "original");
+    let updated = Symbol::new(SymbolFlags::Property, "updated");
+    let seed = Box::leak(Box::new(SymbolArenaLinkStore::<Cell<Option<P<Symbol>>>>::default()));
+    assert!(seed.try_get(source).is_none());
+    seed.get(source).set(Some(original));
+    let seed: &'static SymbolArenaLinkStore<Cell<Option<P<Symbol>>>> = seed;
+    let mut fork = seed.fork();
+    if tsrs_core::sharedgraph::COMPILED_IN {
+        assert_eq!(fork.try_get(source).unwrap().get().get(), Some(original));
+    }
+    fork.get(source).set(Some(updated));
+    assert_eq!(fork.try_get(source).unwrap().get().get(), Some(updated));
+    assert_eq!(seed.try_get(source).unwrap().get().get(), Some(original));
+}
+
+#[test]
 fn type_node_and_signature_links_keep_mixed_ids_separate() {
     let factory = ast::NodeFactory::default();
     let nodes: Vec<_> =

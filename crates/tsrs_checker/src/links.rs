@@ -199,6 +199,12 @@ macro_rules! bitwise_link_copy {
 
 bitwise_link_copy!(Cell<u64>, Cell<u32>);
 
+impl LinkCopy for Cell<Option<P<Symbol>>> {
+    fn copy_link_from(&self, frozen: &Self) {
+        self.set(frozen.get());
+    }
+}
+
 /// A link value that holds its own key, for `KeyedLinkStore`.
 pub trait KeyedLinks {
     /// The key the store filed the value under (`P::key`); 0 until then. Only the store reads or writes it.
@@ -983,7 +989,7 @@ impl<V: 'static> Default for SymbolArenaLinkStore<V> {
 impl<V: 'static> SymbolArenaLinkStore<V> {
     /// Shared graph: see `IdLinkStore::fork`.
     #[must_use]
-    pub(crate) fn fork(&'static self) -> Self {
+    pub fn fork(&'static self) -> Self {
         SymbolArenaLinkStore {
             generator: ast::SymbolIdGenerator::default(),
             block_store: self.block_store.fork(),
