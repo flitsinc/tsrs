@@ -49,6 +49,28 @@ fn test_scan_source_keyword() {
 }
 
 #[test]
+fn test_lookup_keyword_matches_keyword_map() {
+    let keywords = tsrs_scanner::TEXT_TO_KEYWORD;
+    for &(text, kind) in keywords {
+        assert_eq!(tsrs_scanner::get_identifier_token(text), kind, "{text}");
+        for other in [
+            format!("{text}s"),
+            text[..text.len() - 1].to_string(),
+            format!("{}{rest}", text[..1].to_uppercase(), rest = &text[1..]),
+            format!("x{}", &text[1..]),
+            format!("_{text}"),
+        ] {
+            if !keywords.iter().any(|&(keyword, _)| keyword == other) {
+                assert_eq!(tsrs_scanner::get_identifier_token(&other), Kind::Identifier, "{other}");
+            }
+        }
+    }
+    for text in ["", "a", "\0\0", "élse"] {
+        assert_eq!(tsrs_scanner::get_identifier_token(text), Kind::Identifier, "{text}");
+    }
+}
+
+#[test]
 fn test_scan_string_preserves_lone_surrogates() {
     let mut s = Scanner::new();
     s.set_text(r#""🦀퟿\ud800\ud801🦀""#);
