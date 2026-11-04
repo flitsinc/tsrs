@@ -2719,9 +2719,9 @@ impl Checker {
         };
         let layout = lazy.layout;
         if layout.layout_properties.get().is_none() {
-            layout
-                .layout_properties
-                .set(Some(alloc_vec(layout.member_infos.iter().map(|info| info.symbol).collect())));
+            layout.layout_properties.set(Some(alloc_vec(
+                layout.members.map(|members| members.values()).unwrap_or_default(),
+            )));
         }
         layout.layout_properties.get().unwrap()
     }
@@ -3509,11 +3509,9 @@ impl Checker {
         let r = self.resolving_object_type_stack.last().unwrap();
         let lazy = r.t.as_structured_type().get_lazy_state().unwrap();
         for symbol in r.resolved_members.values() {
-            if let Ok(index) =
-                lazy.layout.member_info_map.binary_search_by(|&(name, _)| name.cmp(symbol.name()))
+            if let Some(index) = lazy.layout.members.and_then(|members| members.find(symbol.name()))
             {
-                let slot_index = lazy.layout.member_info_map[index].1;
-                lazy.property_slots()[slot_index].set(Some(symbol));
+                lazy.property_slots()[index].set(Some(symbol));
             }
         }
     }
@@ -3556,15 +3554,27 @@ impl Checker {
 
     // checker.go:19736
     fn create_member_layout(&mut self, t: P<Type>, base_types: &[P<Type>]) -> P<MemberLayout> {
-        let mut infos = FxHashMap::default();
+        // Reuse the member table and base indices to avoid repeated allocations.
+        let mut members = self.layout_members.take();
+        let mut base_indices = std::mem::take(&mut self.layout_base_indices);
+        let mut add_member = |symbol: P<Symbol>, base_index: Option<usize>| {
+            let table = *members.get_or_insert_with(SymbolTable::new);
+            if table.add_if_absent(symbol.name(), symbol) {
+                base_indices.push(base_index.map(|index| {
+                    std::num::NonZeroU32::new(
+                        u32::try_from(index)
+                            .expect("base index exceeds u32")
+                            .checked_add(1)
+                            .expect("base index exceeds optional u32"),
+                    )
+                    .unwrap()
+                }));
+            }
+        };
         if let Some(declared) = t.as_interface_type().declared_members.get() {
             for (name, symbol) in declared.entries() {
                 if self.is_named_member(symbol, name) {
-                    infos.entry(symbol.name()).or_insert(MemberInfo {
-                        symbol,
-                        base_index: None,
-                        slot_index: 0,
-                    });
+                    add_member(symbol, None);
                 }
             }
         }
@@ -3578,39 +3588,29 @@ impl Checker {
                     .get_lazy_state()
                     .unwrap()
                     .layout;
-                layout.member_infos.iter().map(|info| info.symbol).collect::<Vec<_>>()
+                layout.members.map(|members| members.values()).unwrap_or_default()
             } else {
                 self.get_properties_of_type(base_type).to_vec()
             };
             for symbol in properties {
                 if !is_static_private_identifier_property(symbol) {
-                    infos.entry(symbol.name()).or_insert(MemberInfo {
-                        symbol,
-                        base_index: Some(base_index),
-                        slot_index: 0,
-                    });
+                    add_member(symbol, Some(base_index));
                 }
             }
         }
-        let mut member_infos: Vec<MemberInfo> = infos.into_values().collect();
-        member_infos.sort_by(|a, b| match (a.base_index, b.base_index) {
-            (None, Some(_)) => std::cmp::Ordering::Less,
-            (Some(_), None) => std::cmp::Ordering::Greater,
-            _ => self.compare_symbols(Some(a.symbol), Some(b.symbol)),
-        });
-        let mut member_info_map = Vec::with_capacity(member_infos.len());
-        for (index, info) in member_infos.iter_mut().enumerate() {
-            info.slot_index = index;
-            member_info_map.push((info.symbol.name(), index));
-        }
-        member_info_map.sort_unstable_by_key(|&(name, _)| name);
         let layout = P::new(MemberLayout {
             id: self.member_layout_count,
-            member_info_map: alloc_vec(member_info_map),
-            member_infos: alloc_vec(member_infos),
+            members: members.map(|members| members.clone_table()),
+            base_indices: alloc_slice(&base_indices),
             layout_properties: Default::default(),
         });
         self.member_layout_count += 1;
+        if let Some(members) = members {
+            members.clear();
+        }
+        base_indices.clear();
+        self.layout_members = members;
+        self.layout_base_indices = base_indices;
         layout
     }
 }

@@ -1262,6 +1262,8 @@ pub struct Checker {
     pub(crate) member_layout_cache:
         crate::basedmap::Based<FxHashMap<CacheHashKey, P<MemberLayout>>, CacheHashKey>,
     pub(crate) member_layout_count: u32,
+    pub(crate) layout_members: Option<P<SymbolTable>>,
+    pub(crate) layout_base_indices: Vec<Option<std::num::NonZeroU32>>,
     /// Per generic target, what `prepare_lazy_members` learned about its declared members for good
     /// (`lazy_unaffected_members`).
     pub(crate) lazy_unaffected: FxHashMap<P<Type>, crate::checker_09::LazyUnaffected>,
@@ -1780,6 +1782,8 @@ pub fn new_checker(program: &'static dyn Program) -> Box<Checker> {
         lazy_member_tables: crate::basedmap::Based::default(),
         member_layout_cache: crate::basedmap::Based::default(),
         member_layout_count: 0,
+        layout_members: None,
+        layout_base_indices: Vec::new(),
         lazy_unaffected: FxHashMap::default(),
         object_types_without_abstract_construct_signatures: FxHashMap::default(),
         structured_type_base_constraints: FxHashMap::default(),
@@ -2325,6 +2329,8 @@ impl Checker {
             lazy_member_tables: crate::basedmap::Based::over(&base.lazy_member_tables),
             member_layout_cache: crate::basedmap::Based::over(&base.member_layout_cache),
             member_layout_count: base.member_layout_count,
+            layout_members: None,
+            layout_base_indices: Vec::new(),
             lazy_unaffected: FxHashMap::default(),
             object_types_without_abstract_construct_signatures: base
                 .object_types_without_abstract_construct_signatures

@@ -334,7 +334,7 @@ impl Checker {
                 }
             }
         }
-        self.get_named_members(Some(props_by_name), None)
+        self.get_named_members(Some(props_by_name))
     }
 
     // services.go:296

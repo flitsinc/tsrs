@@ -2180,7 +2180,6 @@ impl Checker {
         }
         // Combinations of function, class, enum and module
         let mut members = self.get_exports_of_symbol(symbol);
-        let mut index_infos: Vec<P<IndexInfo>> = Vec::new();
         if symbol == self.global_this_symbol {
             let vars_only = SymbolTable::new();
             if let Some(members) = members {
@@ -2197,7 +2196,6 @@ impl Checker {
             members = Some(vars_only);
         }
         let mut base_constructor_index_info = None;
-        self.set_structured_type_members(t, members, &[], &[], &[]);
         if symbol.flags().intersects(SymbolFlags::Class) {
             let class_type = self.get_declared_type_of_class_or_interface(symbol);
             let base_constructor_type = self.get_base_constructor_type_of_class(class_type);
@@ -2208,11 +2206,12 @@ impl Checker {
                 members = members.map(|m| m.clone_table());
                 let base_properties = self.get_properties_of_type(base_constructor_type);
                 Self::add_inherited_members(members, base_properties);
-                self.set_structured_type_members(t, members, &[], &[], &[]);
             } else if base_constructor_type == self.any_type {
                 base_constructor_index_info = Some(self.any_base_type_index_info);
             }
         }
+        self.set_structured_type_members(t, members, &[], &[], &[]);
+        let mut index_infos: Vec<P<IndexInfo>> = Vec::new();
         let index_symbol = members.and_then(|m| m.lookup(INTERNAL_SYMBOL_NAME_INDEX));
         if let Some(index_symbol) = index_symbol {
             let values = members.map(|m| m.values()).unwrap_or_default();
@@ -2230,15 +2229,19 @@ impl Checker {
                 index_infos.push(self.enum_number_index_info);
             }
         }
-        d.set_index_infos(alloc_vec(index_infos));
+        if !index_infos.is_empty() {
+            d.set_index_infos(alloc_vec(index_infos));
+        }
         // We resolve the members before computing the signatures because a signature may use
         // typeof with a qualified name expression that circularly references the type we are
         // in the process of resolving (see issue #6072). The temporarily empty signature list
         // will never be observed because a qualified name can't reference signatures.
         if symbol.flags().intersects(SymbolFlags::Function | SymbolFlags::Method) {
             let signatures = self.get_signatures_of_symbol(Some(symbol));
-            d.set_signatures(alloc_vec(signatures));
-            d.set_call_signature_count(d.signatures().len());
+            if !signatures.is_empty() {
+                d.set_signatures(alloc_vec(signatures));
+                d.set_call_signature_count(d.signatures().len());
+            }
         }
         // And likewise for construct signatures for classes
         if symbol.flags().intersects(SymbolFlags::Class) {
