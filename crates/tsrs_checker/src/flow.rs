@@ -2902,8 +2902,11 @@ impl Checker {
                 return self.is_matching_reference(source.expression().unwrap(), target);
             }
             Kind::PropertyAccessExpression | Kind::ElementAccessExpression => {
+                if !ast::is_access_expression(target) {
+                    return false;
+                }
                 let (source_property_name, ok) = self.get_accessed_property_name(source);
-                if ok && ast::is_access_expression(target) {
+                if ok {
                     let (target_property_name, ok) = self.get_accessed_property_name(target);
                     if ok {
                         return target_property_name == source_property_name
