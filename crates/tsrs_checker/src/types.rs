@@ -2358,7 +2358,9 @@ impl LazyState {
         if self.properties.get().is_empty() {
             self.properties.set(alloc_vec(vec![
                 OvCell::default();
-                self.layout.members.map_or(0, |members| members.len())
+                self.layout
+                    .members
+                    .map_or(0, |members| members.len())
             ]));
         }
         self.properties.get()
