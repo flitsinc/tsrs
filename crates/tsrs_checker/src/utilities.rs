@@ -15,13 +15,20 @@ pub fn new_diagnostic_for_node(
     message: Option<&'static Message>,
     args: &[&dyn Display],
 ) -> P<Diagnostic> {
+    let (file, loc) = diagnostic_location_for_node(node);
+    ast::new_diagnostic(file, loc, message.unwrap(), args)
+}
+
+pub(crate) fn diagnostic_location_for_node(
+    node: Option<P<Node>>,
+) -> (Option<P<SourceFile>>, TextRange) {
     let mut file: Option<P<SourceFile>> = None;
     let mut loc = TextRange::default();
     if let Some(node) = node {
         file = ast::get_source_file_of_node(node);
         loc = tsrs_scanner::get_error_range_for_node(file.unwrap(), node);
     }
-    ast::new_diagnostic(file, loc, message.unwrap(), args)
+    (file, loc)
 }
 
 // utilities.go:31

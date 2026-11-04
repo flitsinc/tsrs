@@ -2015,13 +2015,18 @@ impl Checker {
     }
 
     // checker.go:14237
-    pub(crate) fn error(
+    pub fn error(
         &mut self,
         location: Option<P<Node>>,
         message: &'static Message,
         args: &[&dyn Display],
     ) -> P<Diagnostic> {
-        self.add_diagnostic(new_diagnostic_for_node(location, Some(message), args))
+        self.diagnostic_adds = self.diagnostic_adds.wrapping_add(1);
+        if self.serialization_level < MAX_SERIALIZATION_LEVEL {
+            let (file, loc) = diagnostic_location_for_node(location);
+            return self.diagnostics.add_new(file, loc, message, args);
+        }
+        new_diagnostic_for_node(location, Some(message), args)
     }
 
     // checker.go:14241

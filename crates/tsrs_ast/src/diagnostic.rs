@@ -389,7 +389,16 @@ pub fn new_diagnostic(
 ) -> P<Diagnostic> {
     // Diagnostics outlive a scratch region (one file's emit) they are reported in.
     let _outer = tsrs_core::arena::escape_for_diagnostic();
-    P::new(Diagnostic {
+    P::new(new_diagnostic_value(file, loc, message, args))
+}
+
+fn new_diagnostic_value(
+    file: Option<P<SourceFile>>,
+    loc: impl Into<Option<TextRange>>,
+    message: &'static Message,
+    args: &[&dyn fmt::Display],
+) -> Diagnostic {
+    Diagnostic {
         file: OwnedCell::new(file),
         loc: OwnedCell::new(loc.into().filter(|loc| loc.is_valid())),
         code: message.code(),
@@ -405,7 +414,7 @@ pub fn new_diagnostic(
         reports_deprecated: message.reports_deprecated(),
         skipped_on_no_emit: OwnedCell::new(false),
         repopulate_info: OwnedCell::new(None),
-    })
+    }
 }
 
 // diagnostic.go:166
@@ -520,8 +529,34 @@ impl DiagnosticsCollection {
         self.count
     }
 
+    /// Return the canonical diagnostic without allocating discarded duplicates in the arena.
+    pub fn add_new(
+        &mut self,
+        file: Option<P<SourceFile>>,
+        loc: impl Into<Option<TextRange>>,
+        message: &'static Message,
+        args: &[&dyn fmt::Display],
+    ) -> P<Diagnostic> {
+        let _outer = tsrs_core::arena::escape_for_diagnostic();
+        let diagnostic = new_diagnostic_value(file, loc, message, args);
+        let key = get_diagnostic_location_key(&diagnostic);
+        if let Some(&existing) = self.diagnostic_index.get(&key) {
+            if equal_diagnostic_values(existing.get(), &diagnostic) {
+                return existing;
+            }
+            if let Some(collisions) = self.diagnostic_collisions.get(&key)
+                && let Some(&existing) = collisions
+                    .iter()
+                    .find(|existing| equal_diagnostic_values(existing.get(), &diagnostic))
+            {
+                return existing;
+            }
+        }
+        self.add(P::new(diagnostic))
+    }
+
     pub fn add(&mut self, diagnostic: P<Diagnostic>) -> P<Diagnostic> {
-        let key = get_diagnostic_location_key(diagnostic);
+        let key = get_diagnostic_location_key(diagnostic.get());
         match self.diagnostic_index.entry(key) {
             Entry::Vacant(e) => {
                 e.insert(diagnostic);
@@ -626,7 +661,7 @@ impl std::hash::Hash for DiagnosticLocationKey {
     }
 }
 
-fn get_diagnostic_location_key(diagnostic: P<Diagnostic>) -> DiagnosticLocationKey {
+fn get_diagnostic_location_key(diagnostic: &Diagnostic) -> DiagnosticLocationKey {
     DiagnosticLocationKey {
         file: diagnostic.file(),
         loc: diagnostic.loc(),
@@ -634,7 +669,7 @@ fn get_diagnostic_location_key(diagnostic: P<Diagnostic>) -> DiagnosticLocationK
     }
 }
 
-fn get_diagnostic_path(d: P<Diagnostic>) -> &'static str {
+fn get_diagnostic_path(d: &Diagnostic) -> &'static str {
     match d.file() {
         Some(file) => file.get().file_name(),
         None => "",
@@ -672,7 +707,11 @@ pub fn equal_diagnostics(d1: P<Diagnostic>, d2: P<Diagnostic>) -> bool {
     if d1 == d2 {
         return true;
     }
-    equal_diagnostics_no_related_info(d1, d2)
+    equal_diagnostic_values(d1.get(), d2.get())
+}
+
+fn equal_diagnostic_values(d1: &Diagnostic, d2: &Diagnostic) -> bool {
+    equal_diagnostic_values_no_related_info(d1, d2)
         && slices_equal_func(d1.related_information(), d2.related_information(), equal_diagnostics)
 }
 
@@ -680,6 +719,10 @@ pub fn equal_diagnostics_no_related_info(d1: P<Diagnostic>, d2: P<Diagnostic>) -
     if d1 == d2 {
         return true;
     }
+    equal_diagnostic_values_no_related_info(d1.get(), d2.get())
+}
+
+fn equal_diagnostic_values_no_related_info(d1: &Diagnostic, d2: &Diagnostic) -> bool {
     get_diagnostic_path(d1) == get_diagnostic_path(d2)
         && d1.loc() == d2.loc()
         && d1.code() == d2.code()
@@ -698,7 +741,7 @@ fn slices_equal_func(
     a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| eq(*x, *y))
 }
 
-fn get_diagnostic_message_identity(diagnostic: P<Diagnostic>) -> &'static str {
+fn get_diagnostic_message_identity(diagnostic: &Diagnostic) -> &'static str {
     if !diagnostic.message_text().is_empty() {
         return diagnostic.message_text();
     }
@@ -777,7 +820,7 @@ pub fn compare_diagnostics(d1: P<Diagnostic>, d2: P<Diagnostic>) -> Ordering {
     if d1 == d2 {
         return Ordering::Equal;
     }
-    let mut c = compare_strings(get_diagnostic_path(d1), get_diagnostic_path(d2));
+    let mut c = compare_strings(get_diagnostic_path(d1.get()), get_diagnostic_path(d2.get()));
     if c != Ordering::Equal {
         return c;
     }
@@ -797,7 +840,10 @@ pub fn compare_diagnostics(d1: P<Diagnostic>, d2: P<Diagnostic>) -> Ordering {
     if c != Ordering::Equal {
         return c;
     }
-    c = compare_strings(get_diagnostic_message_identity(d1), get_diagnostic_message_identity(d2));
+    c = compare_strings(
+        get_diagnostic_message_identity(d1.get()),
+        get_diagnostic_message_identity(d2.get()),
+    );
     if c != Ordering::Equal {
         return c;
     }

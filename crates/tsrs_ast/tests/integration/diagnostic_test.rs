@@ -6,6 +6,117 @@ use tsrs_diagnostics::Category;
 use tsrs_ast::diagnostic::*;
 
 #[test]
+fn duplicate_diagnostics_do_not_consume_arena_storage() {
+    let region = tsrs_core::arena::Region::new(64 << 10);
+    let _route = region.route_diagnostics();
+    let mut collection = DiagnosticsCollection::default();
+    let message = &diagnostics::TYPE_INSTANTIATION_IS_EXCESSIVELY_DEEP_AND_POSSIBLY_INFINITE;
+    let first = collection.add_new(None, None, message, &[]);
+    let used = region.used_bytes();
+    assert!(used > 0);
+    for _ in 0..10_000 {
+        assert_eq!(collection.add_new(None, None, message, &[]), first);
+    }
+    assert_eq!(collection.count(), 1);
+    assert_eq!(region.used_bytes(), used);
+
+    // The original API still accepts already allocated diagnostics and returns the same canonical value.
+    let duplicate = new_compiler_diagnostic(message, &[]);
+    assert_eq!(collection.add(duplicate), first);
+    assert!(region.used_bytes() > used);
+}
+
+#[test]
+fn new_diagnostics_survive_nested_scratch_regions_with_and_without_a_route() {
+    use tsrs_core::arena::Region;
+
+    for routed in [false, true] {
+        let owner = Region::new(64 << 10);
+        let diagnostic_owner = Region::new(64 << 10);
+        let checker = Region::new_scratch(64 << 10);
+        let file = Region::new_scratch(64 << 10);
+        let expected_owner = if routed { &diagnostic_owner } else { &owner };
+        let mut collection = DiagnosticsCollection::default();
+        let diagnostic = {
+            let _owner = owner.enter();
+            let _checker = checker.enter_scratch();
+            let _file = file.enter_scratch();
+            let _route = routed.then(|| diagnostic_owner.route_diagnostics());
+            let message = &diagnostics::CANNOT_FIND_NAME_0;
+            let first = collection.add_new(None, None, message, &[&"x"]);
+            assert!(Region::containing(first.addr()).unwrap().ptr_eq(expected_owner));
+            let used = expected_owner.used_bytes();
+            for _ in 0..100 {
+                assert_eq!(collection.add_new(None, None, message, &[&"x"]), first);
+            }
+            assert_eq!(expected_owner.used_bytes(), used);
+            let related = new_compiler_diagnostic(&diagnostics::X_0_IS_DECLARED_HERE, &[&"x"]);
+            first.add_related_info(related);
+            assert!(Region::containing(related.addr()).unwrap().ptr_eq(expected_owner));
+            assert!(
+                Region::containing(first.related_information().as_ptr() as usize)
+                    .unwrap()
+                    .ptr_eq(expected_owner)
+            );
+            first
+        };
+        drop(file);
+        drop(checker);
+        assert_eq!(diagnostic.localize(), "Cannot find name 'x'.");
+        assert_eq!(diagnostic.related_information().len(), 1);
+        assert_eq!(diagnostic.related_information()[0].localize(), "'x' is declared here.");
+        assert_eq!(collection.get_global_diagnostics(), [diagnostic]);
+    }
+}
+
+#[test]
+fn new_diagnostics_preserve_collision_identity_and_related_information() {
+    let mut collection = DiagnosticsCollection::default();
+    let message = &diagnostics::CANNOT_FIND_NAME_0;
+    let first = collection.add_new(None, None, message, &[&"x"]);
+    let second = collection.add_new(None, None, message, &[&"y"]);
+    assert_ne!(first, second);
+    for _ in 0..100 {
+        assert_eq!(collection.add_new(None, None, message, &[&"y"]), second);
+        assert_eq!(collection.add_new(None, None, message, &[&"x"]), first);
+    }
+    assert_eq!(collection.count(), 2);
+
+    first.add_related_info(new_compiler_diagnostic(
+        &diagnostics::X_0_IS_DECLARED_HERE,
+        &[&"related"],
+    ));
+    let no_related = collection.add_new(None, None, message, &[&"x"]);
+    assert_ne!(no_related, first);
+    assert_eq!(no_related.related_information(), []);
+    assert_eq!(collection.add_new(None, None, message, &[&"x"]), no_related);
+    assert_eq!(collection.count(), 3);
+    let duplicate = new_compiler_diagnostic(message, &[&"x"]).add_related_info(
+        new_compiler_diagnostic(&diagnostics::X_0_IS_DECLARED_HERE, &[&"related"]),
+    );
+    assert_eq!(collection.add(duplicate), first);
+}
+
+#[test]
+fn new_diagnostics_keep_locations_and_ad_hoc_messages_distinct() {
+    let mut collection = DiagnosticsCollection::default();
+    let message = &diagnostics::CANNOT_FIND_NAME_0;
+    let first = collection.add_new(None, TextRange::new(1, 2), message, &[&"x"]);
+    let other_location = collection.add_new(None, TextRange::new(2, 3), message, &[&"x"]);
+    assert_ne!(first, other_location);
+    assert_eq!(collection.add_new(None, TextRange::new(1, 2), message, &[&"x"]), first);
+
+    let first_message = new_ad_hoc_message("first");
+    let second_message = new_ad_hoc_message("second");
+    let first = collection.add_new(None, None, first_message, &[]);
+    let second = collection.add_new(None, None, second_message, &[]);
+    assert_ne!(first, second);
+    assert_eq!(collection.add_new(None, None, first_message, &[]), first);
+    assert_eq!(collection.add_new(None, None, second_message, &[]), second);
+    assert_eq!(collection.count(), 4);
+}
+
+#[test]
 fn diagnostics_collection_deduplicates_exact_diagnostics_on_add() {
     let mut collection = DiagnosticsCollection::default();
     let first =
