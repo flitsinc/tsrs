@@ -6,6 +6,33 @@ use tsrs_tsoptions::parsinghelpers::{
 };
 
 #[test]
+fn cached_typed_lists_and_paths_survive_option_parsing() {
+    let mut options = CompilerOptions::default();
+    parse_compiler_options_worker(
+        "types",
+        &CompilerOptionsValue::StringArray(vec!["node".to_string()]),
+        &mut options,
+    );
+    parse_compiler_options_worker(
+        "paths",
+        &CompilerOptionsValue::Object(
+            [("x".to_string(), CompilerOptionsValue::StringArray(vec!["./x".to_string()]))]
+                .into_iter()
+                .collect(),
+        ),
+        &mut options,
+    );
+    assert_eq!(options.types, Some(vec!["node".to_string()]));
+    assert_eq!(options.paths.as_ref().unwrap().get("x"), Some(&Some(vec!["./x".to_string()])));
+    parse_compiler_options_worker(
+        "types",
+        &CompilerOptionsValue::StringArray(Vec::new()),
+        &mut options,
+    );
+    assert_eq!(options.types, Some(Vec::new()));
+}
+
+#[test]
 fn test_parse_compiler_option_no_missing_fields() {
     let mut missing_keys: Vec<&str> = Vec::new();
     macro_rules! check {

@@ -30,6 +30,9 @@ fn parse_tristate(value: &CompilerOptionsValue) -> Tristate {
 }
 
 fn parse_string_array(value: &CompilerOptionsValue) -> Option<Vec<String>> {
+    if let CompilerOptionsValue::StringArray(arr) = value {
+        return Some(arr.clone());
+    }
     if let CompilerOptionsValue::Array(arr) = value {
         let mut result = Vec::with_capacity(arr.len());
         result.extend(arr.iter().filter_map(|v| {
