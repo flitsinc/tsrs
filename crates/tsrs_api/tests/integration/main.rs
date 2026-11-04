@@ -25,5 +25,6 @@ mod raw_options_test;
 mod requestfs_differential;
 mod requestfs_test;
 mod session_apistate_test;
+mod snapshot_filesystem_test;
 mod sourcefile_test;
 mod transpile_test;

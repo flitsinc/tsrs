@@ -25,6 +25,7 @@ use crate::wire::Params;
 pub enum Kind {
     Full,
     Layer,
+    Snapshot,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -77,6 +78,7 @@ fn dir_info(name: &str) -> FileInfo {
 struct Node {
     entry: Option<Arc<Entry>>,
     fallback: Fallback,
+    fallback_path: String,
     children: FxHashMap<Path, Arc<Node>>,
     has_symlinks: bool,
 }
@@ -257,6 +259,7 @@ fn compose(
     let mut result: Node = base.map(|b| (**b).clone()).unwrap_or_default();
     if overlay.fallback != Fallback::Inherit || overlay.replaces_subtree() {
         result.fallback = fallback;
+        result.fallback_path.clone_from(&overlay.fallback_path);
     }
     let previous_listing = match result.entry.as_deref() {
         Some(Entry::Directory { listing, .. }) => Some(listing.clone()),
@@ -342,6 +345,8 @@ fn compose(
 /// Parsed `RequestFileSystem` params.
 pub struct RequestParams {
     pub(crate) kind: Kind,
+    pub(crate) snapshot: u64,
+    pub(crate) file_system: Option<Box<RequestParams>>,
     files: Vec<(String, String)>,
     directories: Vec<(String, Entries)>,
     symlinks: Vec<(String, String, bool)>,
@@ -355,6 +360,7 @@ impl RequestParams {
         let kind = match o.get("kind") {
             Some(Value::String(k)) if k == "full" => Kind::Full,
             Some(Value::String(k)) if k == "layer" => Kind::Layer,
+            Some(Value::String(k)) if k == "snapshot" => Kind::Snapshot,
             Some(Value::String(k)) => return Err(format!("unknown request filesystem kind {k:?}")),
             _ => return Err("unknown request filesystem kind \"\"".to_string()),
         };
@@ -434,11 +440,30 @@ impl RequestParams {
         }
         Ok(RequestParams {
             kind,
+            snapshot: p.u64("snapshot").map_err(|e| e.message)?,
+            file_system: if p.has("fileSystem") {
+                Some(Box::new(Self::parse(p.get("fileSystem"))?))
+            } else {
+                None
+            },
             files,
             directories,
             symlinks,
             removed_paths: str_list(p.get("removedPaths"), "removedPaths")?,
         })
+    }
+
+    pub(crate) fn replaces_file_system(&self) -> bool {
+        self.kind == Kind::Full
+            || self.kind == Kind::Snapshot
+                && self.file_system.as_ref().is_some_and(|fs| fs.kind == Kind::Full)
+    }
+
+    pub(crate) fn has_entries(&self) -> bool {
+        !self.files.is_empty()
+            || !self.directories.is_empty()
+            || !self.symlinks.is_empty()
+            || !self.removed_paths.is_empty()
     }
 }
 
@@ -499,12 +524,48 @@ pub fn new_for_update(
     Ok(fs)
 }
 
+/// Go `Rebase`: only retained request entries are copied; cached/editor contents are used for invalidation.
+pub fn rebase(
+    source: &RequestFileSystem,
+    host: Arc<dyn FS>,
+    target: Option<&RequestFileSystem>,
+    base_contents: &dyn FS,
+    changes: &mut FileChangeSummary,
+) -> RequestFileSystem {
+    let mut result = RequestFileSystem {
+        kind: source.kind,
+        base: target.map_or_else(|| Arc::clone(&host), |fs| Arc::clone(&fs.base)),
+        base_ref: target.map_or_else(|| FsRef::Host(host), |fs| fs.base_ref.clone()),
+        current_directory: source.current_directory.clone(),
+        cs: source.cs,
+        paths: Arc::clone(&source.paths),
+    };
+    if source.kind == Kind::Layer
+        && let Some(target) = target
+    {
+        result.paths =
+            compose(Some(&target.paths), Some(&source.paths), Fallback::Allowed, source.cs)
+                .unwrap_or_default();
+        result.kind = target.kind;
+    }
+    if !target.is_some_and(|target| std::ptr::eq(source, target)) {
+        add_rebase_file_changes(changes, source, target, base_contents, &result);
+        if source.kind == Kind::Full {
+            changes.invalidate_all = true;
+        }
+    }
+    result
+}
+
 impl RequestFileSystem {
     fn new_worker(
         params: &RequestParams,
         base: Arc<dyn FS>,
         current_directory: &str,
     ) -> Result<RequestFileSystem, String> {
+        if params.kind != Kind::Full && params.kind != Kind::Layer {
+            return Err("unknown request filesystem kind \"snapshot\"".to_string());
+        }
         let cs = base.use_case_sensitive_file_names();
         let mut r = RequestFileSystem {
             kind: params.kind,
@@ -586,8 +647,11 @@ impl RequestFileSystem {
             r.register_directory(&mut root, &d);
         }
         for p in &params.removed_paths {
-            let path = r.to_path(&r.to_absolute_path(p));
-            root.ensure(&path).fallback = Fallback::Missing;
+            let abs = r.to_absolute_path(p);
+            let path = r.to_path(&abs);
+            let node = root.ensure(&path);
+            node.fallback = Fallback::Missing;
+            node.fallback_path = abs;
         }
         r.paths = compose(None, Some(&Arc::new(root)), Fallback::Allowed, cs).unwrap_or_default();
         Ok(r)
@@ -945,6 +1009,147 @@ impl FS for RequestFileSystem {
             return l.path;
         }
         path.to_string()
+    }
+}
+
+/// Go `addRebaseFileChanges`.
+#[expect(
+    clippy::iter_over_hash_type,
+    reason = "Changes populate sets independently of traversal order, matching Go's map traversal."
+)]
+fn add_rebase_file_changes(
+    summary: &mut FileChangeSummary,
+    source: &RequestFileSystem,
+    base_request: Option<&RequestFileSystem>,
+    base_contents: &dyn FS,
+    rebased: &RequestFileSystem,
+) {
+    #[derive(Clone, Copy)]
+    enum Change {
+        Changed,
+        Created,
+        Deleted,
+    }
+    fn removed_entries(node: &Node, rebased: &RequestFileSystem, deleted: &mut dyn FnMut(&str)) {
+        let removed = match node.entry.as_deref() {
+            Some(Entry::File { file_name, .. }) if !rebased.file_exists(file_name) => {
+                Some(file_name)
+            }
+            Some(Entry::Directory { directory_name, .. })
+                if !rebased.directory_exists(directory_name) =>
+            {
+                Some(directory_name)
+            }
+            Some(Entry::Symlink(link))
+                if !rebased.file_exists(&link.link_name)
+                    && !rebased.directory_exists(&link.link_name) =>
+            {
+                Some(&link.link_name)
+            }
+            _ => None,
+        };
+        if let Some(path) = removed {
+            deleted(path);
+            return;
+        }
+        for child in node.children.values() {
+            removed_entries(child, rebased, deleted);
+        }
+    }
+    let add_change = |summary: &mut FileChangeSummary, path: &str, change: Change| {
+        let uri = tsrs_ls::lsconv::file_name_to_document_uri(path);
+        match change {
+            Change::Deleted => {
+                if base_contents.file_exists(path) || base_contents.directory_exists(path) {
+                    summary.deleted.add(uri);
+                }
+            }
+            Change::Created => {
+                summary.created.add(uri);
+            }
+            Change::Changed => {
+                if base_contents.file_exists(path) {
+                    summary.changed.add(uri);
+                } else {
+                    summary.created.add(uri);
+                }
+            }
+        }
+    };
+    let add_with_aliases = |summary: &mut FileChangeSummary, path: &str, change: Change| {
+        add_change(summary, path, change);
+        if let Some(base) = base_request {
+            for alias in base.aliases_for_path(path) {
+                add_change(summary, &alias, change);
+            }
+        }
+    };
+    let base_fs: &dyn FS = base_request.map_or(&*rebased.base, |fs| fs);
+    let mut pending = vec![source.paths.as_ref()];
+    while let Some(node) = pending.pop() {
+        for (path, child) in &node.children {
+            let is_file = matches!(child.entry.as_deref(), Some(Entry::File { .. }));
+            if child.fallback == Fallback::Missing && !child.fallback_path.is_empty() && !is_file {
+                let previous = base_request.map(|base| base.paths.lookup(path));
+                if previous.is_none_or(|(_, fallback)| fallback != Fallback::Missing) {
+                    add_with_aliases(summary, &child.fallback_path, Change::Deleted);
+                } else if let Some((Some(previous), _)) = previous {
+                    removed_entries(previous, rebased, &mut |path| {
+                        add_with_aliases(summary, path, Change::Deleted);
+                    });
+                }
+            }
+            match child.entry.as_deref() {
+                Some(Entry::File { file_name, content }) => {
+                    if base_contents.read_file(file_name).as_deref() != Some(content.as_ref()) {
+                        add_with_aliases(summary, file_name, Change::Changed);
+                    }
+                }
+                Some(Entry::Directory { directory_name, listing }) => {
+                    if listing.is_some() {
+                        let previous = base_fs.get_accessible_entries(directory_name);
+                        let current = rebased.get_accessible_entries(directory_name);
+                        if previous.files != current.files
+                            || previous.directories != current.directories
+                            || previous.symlinks != current.symlinks
+                        {
+                            add_with_aliases(summary, directory_name, Change::Deleted);
+                            add_with_aliases(summary, directory_name, Change::Created);
+                        }
+                    }
+                    if source.kind == Kind::Full {
+                        let previous = base_contents.get_accessible_entries(directory_name);
+                        for name in previous.files {
+                            let file = tspath::combine_paths(directory_name, &[&name]);
+                            if !rebased.file_exists(&file) {
+                                add_with_aliases(summary, &file, Change::Deleted);
+                            }
+                        }
+                        for name in previous.directories {
+                            let directory = tspath::combine_paths(directory_name, &[&name]);
+                            if !rebased.directory_exists(&directory) {
+                                add_with_aliases(summary, &directory, Change::Deleted);
+                            }
+                        }
+                    }
+                }
+                Some(Entry::Symlink(link)) => {
+                    let previous = base_request
+                        .and_then(|base| base.paths.lookup(path).0)
+                        .and_then(|node| node.entry.as_deref());
+                    if !matches!(previous, Some(Entry::Symlink(previous)) if previous.link_name == link.link_name && previous.target == link.target && previous.host == link.host)
+                    {
+                        add_with_aliases(summary, &link.link_name, Change::Deleted);
+                        add_with_aliases(summary, &link.link_name, Change::Created);
+                    }
+                }
+                None => {}
+            }
+            pending.push(child.as_ref());
+        }
+    }
+    if summary.changed.len() + summary.created.len() + summary.deleted.len() > 0 {
+        summary.includes_watch_change_outside_node_modules = true;
     }
 }
 
