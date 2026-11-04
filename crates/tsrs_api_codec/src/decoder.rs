@@ -227,7 +227,7 @@ impl<'a> Decoder<'a> {
             read_le32(self.raw, base).unwrap() as usize,
             read_le32(self.raw, base + 4).unwrap() as usize,
         );
-        let region_len = self.raw.len() - self.str_data as usize;
+        let region_len = (self.ext_data - self.str_data) as usize;
         if start > end || end > region_len {
             return Err(DecodeError::InvalidString(format!(
                 "string {idx} range {start}..{end} out of range"
