@@ -26,7 +26,7 @@ import { execFileSync } from "node:child_process";
 const crateRoot = path.resolve(import.meta.dirname, "..");
 const oracle = process.env.TSRS_CODEC_ORACLE;
 if (!oracle) {
-    console.error("set TSRS_CODEC_ORACLE to an installed typescript@7.1.0-beta package directory");
+    console.error("set TSRS_CODEC_ORACLE to the exact pinned TypeScript package directory");
     process.exit(2);
 }
 const tsc = process.env.TSRS_CODEC_TSC;
@@ -105,8 +105,8 @@ for (const [name] of fixtures) {
     manifest.print[`${name}.client`] = printTo(`${name}.client`, fs.readFileSync(path.join(goldenDir, `${name}.client.bin`)));
 }
 const f = await imp("dist/ast/factory.generated.js");
-const { SyntaxKind: K } = await imp("dist/enums/syntaxKind.enum.js");
-const { TokenFlags } = await imp("dist/enums/tokenFlags.enum.js");
+const { SyntaxKind: K } = await imp("enums/syntaxKind.js");
+const { TokenFlags } = await imp("enums/tokenFlags.js");
 const id = t => f.createIdentifier(t);
 const kw = k => f.createKeywordTypeNode(k);
 const synthetic = {
