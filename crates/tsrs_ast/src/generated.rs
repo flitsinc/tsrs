@@ -11481,6 +11481,10 @@ impl NodeFactory {
         equals_greater_than_token: Option<P<Node>>,
         body: Option<P<Node>>,
     ) -> P<Node> {
+        let equals_greater_than_token = Some(
+            equals_greater_than_token
+                .unwrap_or_else(|| self.new_token(Kind::EqualsGreaterThanToken)),
+        );
         self.new_node(
             Kind::ArrowFunction,
             ArrowFunction {
