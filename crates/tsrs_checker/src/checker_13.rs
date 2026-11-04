@@ -3332,6 +3332,7 @@ impl Checker {
     // checker.go:27835
     pub(crate) fn is_string_index_signature_only_type_worker(&mut self, t: P<Type>) -> bool {
         t.flags().intersects(TypeFlags::Object)
+            && !t.object_flags().intersects(ObjectFlags::ClassOrInterface | ObjectFlags::Reference)
             && !self.is_generic_mapped_type(t)
             && !self.has_properties_of_structured_type(t)
             && self.get_index_infos_of_type(t).len() == 1

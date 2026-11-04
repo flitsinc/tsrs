@@ -2213,12 +2213,8 @@ impl StructuredType {
         let Some(lazy) = self.get_lazy_state() else {
             return self.resolved.get()?.properties.get().get().get(index).copied();
         };
-        if lazy.properties.get().is_empty() {
-            lazy.properties.set(alloc_vec(
-                (0..lazy.layout.member_infos.len()).map(|_| OvCell::default()).collect(),
-            ));
-        }
-        let mut member = lazy.properties.get()[index].get();
+        let properties = lazy.property_slots();
+        let mut member = properties[index].get();
         if member.is_none() {
             let info = lazy.layout.member_infos[index];
             member = if let Some(base_index) = info.base_index {
@@ -2226,7 +2222,7 @@ impl StructuredType {
             } else {
                 Some(c.instantiate_symbol(info.symbol, lazy.mapper.get()))
             };
-            lazy.properties.get()[index].set(member);
+            properties[index].set(member);
         }
         member
     }
@@ -2352,6 +2348,17 @@ pub struct LazyState {
     pub(crate) base_types: &'static [P<Type>],
     pub(crate) properties_resolved: OvCell<bool>,
     pub(crate) properties: OvExact<&'static [OvCell<Option<P<Symbol>>>]>,
+}
+
+impl LazyState {
+    pub(crate) fn property_slots(&self) -> &'static [OvCell<Option<P<Symbol>>>] {
+        if self.properties.get().is_empty() {
+            self.properties.set(alloc_vec(
+                (0..self.layout.member_infos.len()).map(|_| OvCell::default()).collect(),
+            ));
+        }
+        self.properties.get()
+    }
 }
 
 pub struct MemberLayout {

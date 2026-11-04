@@ -2708,6 +2708,7 @@ impl Checker {
         &[]
     }
 
+    // checker.go:19335
     pub(crate) fn get_layout_properties_of_type(&mut self, t: P<Type>) -> &'static [P<Symbol>] {
         let t = self.get_reduced_apparent_type(t);
         let Some(lazy) = self.get_lazy_state_of_type(t) else {
@@ -2722,6 +2723,7 @@ impl Checker {
         layout.layout_properties.get().unwrap()
     }
 
+    // checker.go:19348
     pub(crate) fn get_lazy_state_of_type(&mut self, t: P<Type>) -> Option<P<LazyState>> {
         if t.flags().intersects(TypeFlags::Object) {
             return self.resolve_structured_type_members(t).get_lazy_state();
@@ -2821,6 +2823,12 @@ impl Checker {
     ) -> Option<P<Symbol>> {
         let t = self.get_reduced_apparent_type(t);
         if t.flags().intersects(TypeFlags::Object) {
+            if !t.object_flags_lazy().intersects(ObjectFlags::MembersResolved)
+                && !self.resolving_object_type_stack.is_empty()
+                && let Some(symbol) = self.get_declared_property_of_resolving_type(t, name)
+            {
+                return Some(symbol);
+            }
             let key = HashedName::new(name);
             let symbol = if t.object_flags_lazy().intersects(ObjectFlags::MembersResolved) {
                 t.as_structured_type().get_member(self, name)
@@ -3025,6 +3033,51 @@ impl Checker {
         }
         self.augment_filter = Some(filter);
         filter.may_contain(key)
+    }
+
+    // Declared members can be accessed while building their class/interface's member layout.
+    // Their instantiated symbols are propagated into the completed member layout's slots.
+    // checker.go:19453
+    fn get_declared_property_of_resolving_type(
+        &mut self,
+        t: P<Type>,
+        name: &str,
+    ) -> Option<P<Symbol>> {
+        for i in (0..self.resolving_object_type_stack.len()).rev() {
+            if self.resolving_object_type_stack[i].t == t {
+                let mut resolved =
+                    self.resolving_object_type_stack[i].resolved_members.lookup(name);
+                if resolved.is_none() {
+                    let declared = self.resolve_declared_members(get_target_type(t).unwrap());
+                    if let Some(symbol) =
+                        declared.declared_members.get().and_then(|m| m.lookup(name))
+                        && self.is_named_member(symbol, name)
+                    {
+                        resolved = Some(self.instantiate_symbol(
+                            symbol,
+                            self.resolving_object_type_stack[i].mapper,
+                        ));
+                    } else {
+                        for &base_type in self.resolving_object_type_stack[i].base_types {
+                            if let Some(symbol) =
+                                self.get_property_of_type_ex(base_type, name, true, false)
+                                && !is_static_private_identifier_property(symbol)
+                            {
+                                resolved = Some(symbol);
+                                break;
+                            }
+                        }
+                    }
+                    if let Some(resolved) = resolved {
+                        self.resolving_object_type_stack[i]
+                            .resolved_members
+                            .set(alloc_str(name), resolved);
+                    }
+                }
+                return resolved;
+            }
+        }
+        None
     }
 
     // Return the type of the given property in the given type, or nil if no such property exists
@@ -3414,6 +3467,12 @@ impl Checker {
         } else {
             base_types
         };
+        self.resolving_object_type_stack.push(ResolvingObjectType {
+            t,
+            mapper,
+            base_types: instantiated_base_types,
+            resolved_members: SymbolTable::default(),
+        });
         // Layout must be computed before inherited signatures, which can circularly depend on it.
         let layout = self.get_member_layout(t, instantiated_base_types);
         for &instantiated_base_type in instantiated_base_types {
@@ -3442,8 +3501,25 @@ impl Checker {
             properties_resolved: Default::default(),
             properties: tsrs_core::sharedgraph::OvExact::new(&[]),
         }));
+        self.propagate_resolved_declared_members();
+        self.resolving_object_type_stack.pop();
     }
 
+    // checker.go:19685
+    fn propagate_resolved_declared_members(&mut self) {
+        let r = self.resolving_object_type_stack.last().unwrap();
+        let lazy = r.t.as_structured_type().get_lazy_state().unwrap();
+        for symbol in r.resolved_members.values() {
+            if let Ok(index) =
+                lazy.layout.member_info_map.binary_search_by(|&(name, _)| name.cmp(symbol.name()))
+            {
+                let slot_index = lazy.layout.member_info_map[index].1;
+                lazy.property_slots()[slot_index].set(Some(symbol));
+            }
+        }
+    }
+
+    // checker.go:19699
     fn get_member_layout(&mut self, t: P<Type>, base_types: &[P<Type>]) -> P<MemberLayout> {
         if !t.object_flags().intersects(ObjectFlags::Reference) {
             return self.create_member_layout(t, base_types);
@@ -3458,6 +3534,7 @@ impl Checker {
         layout
     }
 
+    // checker.go:19716
     fn get_member_layout_key(&mut self, t: P<Type>, base_types: &[P<Type>]) -> CacheHashKey {
         let mut b = KeyBuilder::default();
         b.reserve(20 + 5 * base_types.len());
@@ -3478,6 +3555,7 @@ impl Checker {
         b.hash()
     }
 
+    // checker.go:19736
     fn create_member_layout(&mut self, t: P<Type>, base_types: &[P<Type>]) -> P<MemberLayout> {
         let mut infos = FxHashMap::default();
         if let Some(declared) = t.as_interface_type().declared_members.get() {
