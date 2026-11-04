@@ -2183,7 +2183,7 @@ fn parse_json_config_file_content_worker(
             } else if has_reserved_source_extension(ext) {
                 errors.push(set_content_mapper_diagnostic_location(
                     new_compiler_diagnostic(
-                        &diagnostics::CONTENT_MAPPER_FILE_EXTENSION_0_IS_A_BUILT_IN_EXTENSION_AND_CANNOT_BE_REGISTERED_BY_A_CONTENT_MAPPER,
+                        &diagnostics::CONTENT_MAPPER_FILE_EXTENSION_0_CANNOT_BE_REGISTERED_BECAUSE_IT_ENDS_IN_A_BUILT_IN_EXTENSION,
                         &[ext],
                     ),
                     content_mapper_source_file,

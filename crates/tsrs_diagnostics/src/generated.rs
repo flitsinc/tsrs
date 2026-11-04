@@ -172,16 +172,6 @@ pub static AN_INDEX_SIGNATURE_PARAMETER_CANNOT_HAVE_AN_INITIALIZER: Message = Me
     reports_deprecated: false,
 };
 
-pub static AN_INDEX_SIGNATURE_MUST_HAVE_A_TYPE_ANNOTATION: Message = Message {
-    code: 1021,
-    category: Category::Error,
-    key: Key("An_index_signature_must_have_a_type_annotation_1021"),
-    text: "An index signature must have a type annotation.",
-    reports_unnecessary: false,
-    elided_in_compatibility_pyramid: false,
-    reports_deprecated: false,
-};
-
 pub static AN_INDEX_SIGNATURE_PARAMETER_MUST_HAVE_A_TYPE_ANNOTATION: Message = Message {
     code: 1022,
     category: Category::Error,
@@ -14071,6 +14061,8 @@ pub static ENSURE_TYPES_ARE_ORDERED_STABLY_AND_DETERMINISTICALLY_ACROSS_COMPILAT
         reports_deprecated: false,
     };
 
+pub static DISABLE_RUNTIME_REWRITING_OF_FILE_EXTENSIONS_IN_NON_LITERAL_IMPORT_AND_REQUIRE_CALLS_WHEN_REWRITE_RELATIVE_IMPORT_EXTENSIONS_IS_ENABLED: Message = Message { code: 6810, category: Category::Message, key: Key("Disable_runtime_rewriting_of_file_extensions_in_non_literal_import_and_require_calls_when_rewriteRel_6810"), text: "Disable runtime rewriting of file extensions in non-literal 'import()' and 'require()' calls when 'rewriteRelativeImportExtensions' is enabled.", reports_unnecessary: false, elided_in_compatibility_pyramid: false, reports_deprecated: false };
+
 static X_ONE_OF_COLON: Message = Message {
     code: 6900,
     category: Category::Message,
@@ -14852,6 +14844,17 @@ pub static A_MAPPED_TYPE_MAY_NOT_DECLARE_PROPERTIES_OR_METHODS: Message = Messag
     elided_in_compatibility_pyramid: false,
     reports_deprecated: false,
 };
+
+pub static INDEX_SIGNATURE_WHICH_LACKS_TYPE_ANNOTATION_IMPLICITLY_HAS_AN_ANY_TYPE: Message =
+    Message {
+        code: 7062,
+        category: Category::Error,
+        key: Key("Index_signature_which_lacks_type_annotation_implicitly_has_an_any_type_7062"),
+        text: "Index signature, which lacks type annotation, implicitly has an 'any' type.",
+        reports_unnecessary: false,
+        elided_in_compatibility_pyramid: false,
+        reports_deprecated: false,
+    };
 
 pub static DECLARATION_EMIT_ELIDES_PRIVATE_MEMBERS_BUT_0_REFERS_TO_A_PRIVATE_MEMBER_WRITE_AN_EXPLICIT_TYPE_HERE: Message = Message { code: 7080, category: Category::Error, key: Key("Declaration_emit_elides_private_members_but_0_refers_to_a_private_member_Write_an_explicit_type_here_7080"), text: "Declaration emit elides private members, but '{0}' refers to a private member. Write an explicit type here.", reports_unnecessary: false, elided_in_compatibility_pyramid: false, reports_deprecated: false };
 
@@ -16127,7 +16130,7 @@ pub static CONTENT_MAPPER_FILE_EXTENSION_0_MUST_BEGIN_WITH_A: Message = Message 
     reports_deprecated: false,
 };
 
-pub static CONTENT_MAPPER_FILE_EXTENSION_0_IS_A_BUILT_IN_EXTENSION_AND_CANNOT_BE_REGISTERED_BY_A_CONTENT_MAPPER: Message = Message { code: 18066, category: Category::Error, key: Key("Content_mapper_file_extension_0_is_a_built_in_extension_and_cannot_be_registered_by_a_content_mapper_18066"), text: "Content mapper file extension '{0}' is a built-in extension and cannot be registered by a content mapper.", reports_unnecessary: false, elided_in_compatibility_pyramid: false, reports_deprecated: false };
+pub static CONTENT_MAPPER_FILE_EXTENSION_0_CANNOT_BE_REGISTERED_BECAUSE_IT_ENDS_IN_A_BUILT_IN_EXTENSION: Message = Message { code: 18066, category: Category::Error, key: Key("Content_mapper_file_extension_0_cannot_be_registered_because_it_ends_in_a_built_in_extension_18066"), text: "Content mapper file extension '{0}' cannot be registered because it ends in a built-in extension.", reports_unnecessary: false, elided_in_compatibility_pyramid: false, reports_deprecated: false };
 
 pub static CONTENT_MAPPER_FILE_EXTENSION_0_IS_REGISTERED_BY_MORE_THAN_ONE_CONTENT_MAPPER: Message =
     Message {
@@ -16562,6 +16565,19 @@ pub static CONTENT_MAPPER_EXTENSION_0_MUST_NOT_CONTAIN_PATH_SEPARATORS: Message 
     category: Category::Error,
     key: Key("Content_mapper_extension_0_must_not_contain_path_separators_18123"),
     text: "Content mapper extension '{0}' must not contain path separators.",
+    reports_unnecessary: false,
+    elided_in_compatibility_pyramid: false,
+    reports_deprecated: false,
+};
+
+pub static THE_CONTENT_MAPPER_PACKAGE_0_IS_OUTSIDE_THE_OPEN_WORKSPACE_AND_WILL_NOT_BE_LOADED:
+    Message = Message {
+    code: 18124,
+    category: Category::Error,
+    key: Key(
+        "The_content_mapper_package_0_is_outside_the_open_workspace_and_will_not_be_loaded_18124",
+    ),
+    text: "The content mapper package '{0}' is outside the open workspace and will not be loaded.",
     reports_unnecessary: false,
     elided_in_compatibility_pyramid: false,
     reports_deprecated: false,
@@ -19263,7 +19279,7 @@ pub static JSDOC_COMMENT: Message = Message {
     reports_deprecated: false,
 };
 
-pub static ALL_MESSAGES: [&Message; 2229] = [
+pub static ALL_MESSAGES: [&Message; 2231] = [
     &UNTERMINATED_STRING_LITERAL,
     &IDENTIFIER_EXPECTED,
     &X_0_EXPECTED,
@@ -19281,7 +19297,6 @@ pub static ALL_MESSAGES: [&Message; 2229] = [
     &AN_INDEX_SIGNATURE_PARAMETER_CANNOT_HAVE_AN_ACCESSIBILITY_MODIFIER,
     &AN_INDEX_SIGNATURE_PARAMETER_CANNOT_HAVE_A_QUESTION_MARK,
     &AN_INDEX_SIGNATURE_PARAMETER_CANNOT_HAVE_AN_INITIALIZER,
-    &AN_INDEX_SIGNATURE_MUST_HAVE_A_TYPE_ANNOTATION,
     &AN_INDEX_SIGNATURE_PARAMETER_MUST_HAVE_A_TYPE_ANNOTATION,
     &X_READONLY_MODIFIER_CAN_ONLY_APPEAR_ON_A_PROPERTY_DECLARATION_OR_INDEX_SIGNATURE,
     &AN_INDEX_SIGNATURE_CANNOT_HAVE_A_TRAILING_COMMA,
@@ -20922,6 +20937,7 @@ pub static ALL_MESSAGES: [&Message; 2229] = [
     &THIS_OPERATION_CAN_BE_SIMPLIFIED_THIS_SHIFT_IS_IDENTICAL_TO_0_1_2,
     &ENABLE_LIB_REPLACEMENT,
     &ENSURE_TYPES_ARE_ORDERED_STABLY_AND_DETERMINISTICALLY_ACROSS_COMPILATIONS,
+    &DISABLE_RUNTIME_REWRITING_OF_FILE_EXTENSIONS_IN_NON_LITERAL_IMPORT_AND_REQUIRE_CALLS_WHEN_REWRITE_RELATIVE_IMPORT_EXTENSIONS_IS_ENABLED,
     &X_ONE_OF_COLON,
     &X_ONE_OR_MORE_COLON,
     &X_TYPE_COLON,
@@ -21016,6 +21032,7 @@ pub static ALL_MESSAGES: [&Message; 2229] = [
     &THIS_SYNTAX_IS_RESERVED_IN_FILES_WITH_THE_MTS_OR_CTS_EXTENSION_USE_AN_AS_EXPRESSION_INSTEAD,
     &THIS_SYNTAX_IS_RESERVED_IN_FILES_WITH_THE_MTS_OR_CTS_EXTENSION_ADD_A_TRAILING_COMMA_OR_EXPLICIT_CONSTRAINT,
     &A_MAPPED_TYPE_MAY_NOT_DECLARE_PROPERTIES_OR_METHODS,
+    &INDEX_SIGNATURE_WHICH_LACKS_TYPE_ANNOTATION_IMPLICITLY_HAS_AN_ANY_TYPE,
     &DECLARATION_EMIT_ELIDES_PRIVATE_MEMBERS_BUT_0_REFERS_TO_A_PRIVATE_MEMBER_WRITE_AN_EXPLICIT_TYPE_HERE,
     &YOU_CANNOT_RENAME_THIS_ELEMENT,
     &YOU_CANNOT_RENAME_ELEMENTS_THAT_ARE_DEFINED_IN_THE_STANDARD_TYPE_SCRIPT_LIBRARY,
@@ -21165,7 +21182,7 @@ pub static ALL_MESSAGES: [&Message; 2229] = [
     &DUPLICATE_NAMED_CAPTURING_GROUPS_ARE_ONLY_AVAILABLE_WHEN_TARGETING_0_OR_LATER,
     &PRIVATE_IDENTIFIERS_CANNOT_BE_USED_IN_DESTRUCTURING_PATTERNS,
     &CONTENT_MAPPER_FILE_EXTENSION_0_MUST_BEGIN_WITH_A,
-    &CONTENT_MAPPER_FILE_EXTENSION_0_IS_A_BUILT_IN_EXTENSION_AND_CANNOT_BE_REGISTERED_BY_A_CONTENT_MAPPER,
+    &CONTENT_MAPPER_FILE_EXTENSION_0_CANNOT_BE_REGISTERED_BECAUSE_IT_ENDS_IN_A_BUILT_IN_EXTENSION,
     &CONTENT_MAPPER_FILE_EXTENSION_0_IS_REGISTERED_BY_MORE_THAN_ONE_CONTENT_MAPPER,
     &CONTENT_MAPPERS_REQUIRE_THE_RUN_EXTERNAL_CODE_COMMAND_LINE_FLAG_TO_BE_ENABLED,
     &THE_CONTENT_MAPPER_0_FAILED_TO_TRANSFORM_THIS_FILE,
@@ -21223,6 +21240,7 @@ pub static ALL_MESSAGES: [&Message; 2229] = [
     &THE_TYPESCRIPT_CONTENT_MAPPER_OUTPUT_EXTENSIONS_OF_THE_CONTENT_MAPPER_PACKAGE_0_CONTAINS_AN_INVALID_MAPPING_FROM_1_TO_2_EXTENSIONS_MUST_BE_NON_EMPTY_AND_BEGIN_WITH_A,
     &THE_TYPESCRIPT_CONTENT_MAPPER_OUTPUT_EXTENSIONS_OF_THE_CONTENT_MAPPER_PACKAGE_0_MUST_BE_AN_OBJECT_WITH_STRING_VALUES,
     &CONTENT_MAPPER_EXTENSION_0_MUST_NOT_CONTAIN_PATH_SEPARATORS,
+    &THE_CONTENT_MAPPER_PACKAGE_0_IS_OUTSIDE_THE_OPEN_WORKSPACE_AND_WILL_NOT_BE_LOADED,
     &X_NODENEXT_IF_MODULE_IS_NODENEXT_NODE16_IF_MODULE_IS_NODE16_OR_NODE18_OTHERWISE_BUNDLER,
     &FILE_IS_A_COMMON_JS_MODULE_IT_MAY_BE_CONVERTED_TO_AN_ES_MODULE,
     &THIS_CONSTRUCTOR_FUNCTION_MAY_BE_CONVERTED_TO_A_CLASS_DECLARATION,
