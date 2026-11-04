@@ -219,10 +219,13 @@ impl<'a> Decoder<'a> {
     }
 
     pub(crate) fn get_string(&self, idx: u32) -> Result<&'static str, DecodeError> {
-        let base = self.str_table as usize + idx as usize * 4;
-        if base + 8 > self.str_data as usize {
+        let base = u64::from(self.str_table) + u64::from(idx) * 4;
+        if base + 8 > u64::from(self.str_data) {
             return Err(DecodeError::InvalidString(format!("string index {idx} out of range")));
         }
+        // The checked pair lies before the u32 string-data offset, including on wasm32.
+        let base =
+            usize::try_from(base).expect("validated string offset fits the host address space");
         let (start, end) = (
             read_le32(self.raw, base).unwrap() as usize,
             read_le32(self.raw, base + 4).unwrap() as usize,

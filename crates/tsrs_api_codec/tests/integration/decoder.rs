@@ -123,6 +123,16 @@ fn decode_non_source_file_node() {
 }
 
 #[test]
+fn decode_rejects_maximum_string_index() {
+    let (_region, file) = parse_like_server("x.ts", "export const value = 1;");
+    let (mut bytes, _) = encode_source_file(file.get()).unwrap();
+    let extended_data = u32::from_le_bytes(bytes[32..36].try_into().unwrap()) as usize;
+    // SourceFile's first extended-data field is the text string index.
+    bytes[extended_data..extended_data + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(matches!(decode_nodes(&bytes), Err(DecodeError::InvalidString(_))));
+}
+
+#[test]
 fn decode_rejects_string_offsets_into_extended_data() {
     let (_region, file) = parse_like_server("x.ts", "const value = 'text';");
     let (mut bytes, _) = encode_source_file(file.get()).unwrap();
