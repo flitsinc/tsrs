@@ -1181,34 +1181,25 @@ impl Checker {
         // likely to contain discriminating differences. See for example https://github.com/microsoft/TypeScript/tsc/issues/1968.
         let n = members.len();
         let mut result: Vec<P<Symbol>> = Vec::with_capacity(n);
-        let mut contained_count = 0;
-        let is_class_or_interface_container = container
-            .is_some_and(|c| c.flags().intersects(SymbolFlags::Class | SymbolFlags::Interface));
-        if is_class_or_interface_container {
-            let container = container.unwrap();
-            result.extend((0..n).filter_map(|i| {
-                let (id, symbol) = members.entry(i);
-                if self.is_named_member(symbol, id)
-                    && Self::is_declaration_contained_by(symbol, container)
-                {
-                    Some(symbol)
-                } else {
-                    None
-                }
-            }));
-            contained_count = result.len();
-        }
         result.extend((0..n).filter_map(|i| {
             let (id, symbol) = members.entry(i);
-            if self.is_named_member(symbol, id)
-                && (!is_class_or_interface_container
-                    || !Self::is_declaration_contained_by(symbol, container.unwrap()))
-            {
-                Some(symbol)
-            } else {
-                None
-            }
+            if self.is_named_member(symbol, id) { Some(symbol) } else { None }
         }));
+        let Some(container) =
+            container.filter(|c| c.flags().intersects(SymbolFlags::Class | SymbolFlags::Interface))
+        else {
+            self.sort_symbols(&mut result);
+            return result;
+        };
+        // Move the members declared in the container to the front. Both parts are sorted below, so the order the split
+        // leaves them in does not matter.
+        let mut contained_count = 0;
+        for i in 0..result.len() {
+            if Self::is_declaration_contained_by(result[i], container) {
+                result.swap(contained_count, i);
+                contained_count += 1;
+            }
+        }
         let (contained, rest) = result.split_at_mut(contained_count);
         self.sort_symbols(contained);
         self.sort_symbols(rest);
