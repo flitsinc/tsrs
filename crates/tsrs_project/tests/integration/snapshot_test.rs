@@ -57,8 +57,8 @@ fn close_projects_retains_the_default_project_of_api_opened_files() {
             &ctx,
             &FileChangeSummary::default(),
             Some(Arc::new(APISnapshotRequest {
-                open_projects: Some(new_set_from_items([config.0.clone()])),
-                open_files: Some(FxHashMap::from_iter([(file.clone(), file.0.clone())])),
+                open_projects: Some(new_set_from_items([config.to_string()])),
+                open_files: Some(FxHashMap::from_iter([(file.clone(), file.to_string())])),
                 ..Default::default()
             })),
         )
