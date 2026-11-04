@@ -2045,6 +2045,7 @@ impl Server {
         }
 
         let initialize_params = Arc::clone(self.initialize_params.get().unwrap());
+        let workspace_roots = get_initial_workspace_roots(&initialize_params);
         let mut cwd = self.cwd.clone();
         if self.client_capabilities().workspace.workspace_folders
             && matches!(&initialize_params.workspace_folders, Some(lsproto::WorkspaceFoldersOrNull { workspace_folders: Some(folders),  }) if folders.len() == 1)
@@ -2091,6 +2092,7 @@ impl Server {
                 debounce_delay: Duration::from_millis(500),
                 push_diagnostics_enabled: !disable_push_diagnostics,
                 run_external_code,
+                initial_workspace_roots: Some(workspace_roots),
                 ..Default::default()
             }),
             fs: self.fs.clone().expect("FS is required"),
@@ -4029,6 +4031,28 @@ fn check_uri(uri: &lsproto::DocumentUri) -> Result<(), Error> {
 
 // tsrs-only: the file name of a workspace URI, or "" (not absolute: the server's own directory is used) when it has
 // none; Go panics.
+fn get_initial_workspace_roots(params: &lsproto::InitializeParams) -> Vec<String> {
+    let mut roots = Vec::new();
+    if let Some(lsproto::WorkspaceFoldersOrNull { workspace_folders: Some(folders) }) =
+        &params.workspace_folders
+    {
+        for folder in folders {
+            if folder.uri.0.starts_with("file://") {
+                roots.push(file_name_or_empty(&lsproto::DocumentUri(folder.uri.0.clone())));
+            }
+        }
+    } else if let Some(uri) = &params.root_uri.document_uri
+        && uri.0.starts_with("file://")
+    {
+        roots.push(file_name_or_empty(uri));
+    } else if let Some(lsproto::StringOrNull { string: Some(path) }) = &params.root_path
+        && tspath::path_is_absolute(path)
+    {
+        roots.push(path.clone());
+    }
+    roots
+}
+
 fn file_name_or_empty(uri: &lsproto::DocumentUri) -> String {
     if uri.check().is_ok() { uri.file_name() } else { String::new() }
 }

@@ -1068,6 +1068,9 @@ pub fn parse_config_file_text_to_json(
 pub trait ParseConfigHost: Send + Sync {
     fn fs(&self) -> &dyn FS;
     fn get_current_directory(&self) -> &str;
+    fn is_content_mapper_package_allowed(&self, _package_directory: &str) -> bool {
+        true
+    }
 }
 
 // Adapts a parse host for the module resolver while one `extends` or content-mapper lookup runs; it lives on that

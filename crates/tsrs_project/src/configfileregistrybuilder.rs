@@ -1071,6 +1071,23 @@ fn content_mapper_manifest_path(
 }
 
 impl ParseConfigHost for ConfigFileRegistryBuilder {
+    fn is_content_mapper_package_allowed(&self, package_directory: &str) -> bool {
+        let Some(roots) = &self.session_options.initial_workspace_roots else {
+            return true;
+        };
+        let components = tspath::get_path_components(package_directory, "");
+        let Some(index) = components.iter().rposition(|component| component == "node_modules")
+        else {
+            return false;
+        };
+        let node_modules_path = tspath::get_path_from_path_components(&components[..=index]);
+        let options = ComparePathsOptions {
+            current_directory: self.session_options.current_directory.clone(),
+            use_case_sensitive_file_names: self.fs.use_case_sensitive_file_names(),
+        };
+        roots.iter().any(|root| tspath::contains_path(root, &node_modules_path, &options))
+    }
+
     // configfileregistrybuilder.go:787
     fn fs(&self) -> &dyn FS {
         &*self.fs
