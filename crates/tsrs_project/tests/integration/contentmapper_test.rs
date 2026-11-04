@@ -229,7 +229,7 @@ fn inherited_relative_mapper_resolves_from_its_declaring_config() {
         .project_collection
         .configured_project(&Path::from("/home/trusted/tsconfig.json"))
         .unwrap();
-    let mappers = project.command_line.unwrap().content_mappers();
+    let mappers = project.command_line.unwrap().get().content_mappers();
     assert_eq!(mappers.len(), 1);
     assert_eq!(mappers[0].package_directory, "/home/trusted/config/mapper");
     session.close();
