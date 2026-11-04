@@ -180,7 +180,6 @@ impl LanguageService {
                 case_block,
                 file,
                 position,
-                compiler_options,
                 self.get_program(),
                 type_checker,
             )?;

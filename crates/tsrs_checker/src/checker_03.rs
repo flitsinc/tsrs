@@ -3454,7 +3454,7 @@ impl Checker {
             }
             no_cache = true;
         }
-        let result = self.get_iteration_types_of_iterable_worker(t, use_, error_node, no_cache);
+        let result = self.get_iteration_types_of_iterable_worker(t, use_, error_node);
         if !no_cache {
             self.iteration_types_cache.insert(key, result);
         }
@@ -3462,28 +3462,19 @@ impl Checker {
     }
 
     // checker.go:6457
-    #[expect(
-        clippy::only_used_in_recursion,
-        reason = "The pinned Go function also carries these parameters through recursion without otherwise reading them."
-    )]
     fn get_iteration_types_of_iterable_worker(
         &mut self,
         t: P<Type>,
         use_: IterationUse,
         error_node: Option<P<Node>>,
-        no_cache: bool,
     ) -> IterationTypes {
         if t.flags().intersects(TypeFlags::Union) {
             let mut all_iteration_types: Vec<IterationTypes> = Vec::with_capacity(t.types().len());
             all_iteration_types = match t.types().iter().try_fold(
                 all_iteration_types,
                 |mut all_iteration_types, &constituent| {
-                    let iteration_types = self.get_iteration_types_of_iterable_worker(
-                        constituent,
-                        use_,
-                        None,
-                        no_cache,
-                    );
+                    let iteration_types =
+                        self.get_iteration_types_of_iterable_worker(constituent, use_, None);
                     if !iteration_types.has_types() {
                         if let Some(error_node) = error_node {
                             self.add_deferred_diagnostic(move |c| {
