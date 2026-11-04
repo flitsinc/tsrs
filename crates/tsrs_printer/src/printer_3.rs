@@ -574,7 +574,9 @@ impl Printer {
         }
         self.writer = Some(writer);
         self.writer().clear();
-        if let Some(source_file) = source_file {
+        if let Some(source_file) = source_file
+            && node == source_file.as_node()
+        {
             self.writer().grow(source_file.text().len());
         }
 
