@@ -62,7 +62,7 @@ impl FileIncludeReason {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SyntheticImportKind {
+pub enum SyntheticImportKind {
     Helpers,
     JSXRuntime,
 }
