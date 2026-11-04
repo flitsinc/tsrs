@@ -1632,7 +1632,7 @@ pub fn parse_extended_config(
         Some(extended_result),
         host,
         &tspath::get_directory_path(file_name),
-        &tspath::get_base_file_name(file_name),
+        file_name,
         resolution_stack,
         extended_config_cache,
     );

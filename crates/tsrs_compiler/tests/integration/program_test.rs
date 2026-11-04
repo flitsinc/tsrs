@@ -145,28 +145,48 @@ fn config_for(files: &[(&str, &str)]) -> P<tsoptions::ParsedCommandLine> {
 
 #[test]
 fn synthetic_imports_are_recreated_for_each_reused_file() {
-    let config = r#"{"compilerOptions":{"noLib":true,"importHelpers":true,"module":"esnext","moduleResolution":"bundler"},"files":["index.ts"]}"#;
+    let config = r#"{"compilerOptions":{"noLib":true,"importHelpers":true,"module":"esnext","moduleResolution":"bundler"},"files":["index.ts","other.ts"]}"#;
     let files = [
         ("/src/tsconfig.json", config),
         ("/src/index.ts", "export const value = 1;"),
         ("/src/node_modules/tslib/package.json", r#"{"name":"tslib","types":"index.d.ts"}"#),
         ("/src/node_modules/tslib/index.d.ts", "export declare const helper: number;"),
+        ("/src/other.ts", "export const other = 1;"),
     ];
-    let program = new_program(ProgramOptions::new(config_for(&files), host_for(&files)));
+    let mut options = ProgramOptions::new(config_for(&files), host_for(&files));
+    options.checker_regions = true;
+    let program = new_program(options);
     let path = Path::from("/src/index.ts");
     let original_file = program.get_source_file("/src/index.ts").unwrap();
     let original_import = program.get_import_helpers_import_specifier(&path).unwrap();
     let mut previous = program;
-    for text in ["export const value = 2;", "export const value = 3;"] {
-        let edited = [files[0], ("/src/index.ts", text), files[2], files[3]];
+    let mut edited = files;
+    for (edit_index, text) in [
+        (1, "export const value = 2;"),
+        (4, "export const other = 2;"),
+        (1, "export const value = 3;"),
+    ] {
+        let edit_path = Path::from(edited[edit_index].0);
+        edited[edit_index].1 = text;
         let (reused, file, did_reuse) =
-            previous.reuse_program(&path, host_for(&edited), None, None);
+            previous.reuse_program(&edit_path, host_for(&edited), None, None);
         assert!(did_reuse);
         let reused = reused.unwrap();
         let file = file.unwrap();
-        let specifier = reused.get_import_helpers_import_specifier(&path).unwrap();
-        assert_ne!(specifier, previous.get_import_helpers_import_specifier(&path).unwrap());
+        let specifier = reused.get_import_helpers_import_specifier(&edit_path).unwrap();
+        assert_ne!(specifier, previous.get_import_helpers_import_specifier(&edit_path).unwrap());
+        if !std::ptr::eq(previous, program) {
+            // SAFETY: no request or checker uses this intermediate program. The reused program keeps the
+            // shared base and independently retains the regions of all surviving synthetic imports.
+            unsafe { tsrs_compiler::free_program(previous) };
+        }
         assert_eq!(tsrs_ast::get_source_file_of_node(specifier), Some(file));
+        for filename in ["/src/index.ts", "/src/other.ts"] {
+            let current_file = reused.get_source_file(filename).unwrap();
+            let import = reused.get_import_helpers_import_specifier(&Path::from(filename)).unwrap();
+            assert_eq!(tsrs_ast::get_source_file_of_node(import), Some(current_file));
+            assert_eq!(import.text(), "tslib");
+        }
         assert_eq!(tsrs_ast::get_source_file_of_node(original_import), Some(original_file));
         assert_eq!(program.get_import_helpers_import_specifier(&path), Some(original_import));
         previous = reused;

@@ -205,6 +205,9 @@ pub struct Program {
     pub(crate) import_helpers_import_specifiers: Arc<FxHashMap<Path, P<Node>>>,
     pub(crate) jsx_runtime_import_specifiers:
         Arc<FxHashMap<Path, P<crate::fileloader::JsxRuntimeImportSpecifier>>>,
+    // Reused programs can retain synthetic imports from earlier edits of other files.
+    // A region per replaced file follows those imports across every shallow map clone.
+    synthetic_import_regions: Arc<FxHashMap<Path, tsrs_core::arena::Region>>,
     processed: &'static ProcessedFiles,
     project_reference_file_mapper: &'static ProjectReferenceFileMapper,
     processing_diagnostics: Mutex<Vec<ProcessingDiagnostic>>,
@@ -543,6 +546,7 @@ pub fn new_program(opts: ProgramOptions) -> &'static Program {
         jsx_runtime_import_specifiers: Arc::new(std::mem::take(
             &mut processed.jsx_runtime_import_specifiers,
         )),
+        synthetic_import_regions: Arc::default(),
         processed: Box::leak(Box::new(processed)),
         project_reference_file_mapper,
         processing_diagnostics: Mutex::new(processing_diagnostics),
@@ -810,6 +814,7 @@ impl Program {
             files_by_path: FxHashMap::default(),
             import_helpers_import_specifiers: Arc::clone(&self.import_helpers_import_specifiers),
             jsx_runtime_import_specifiers: Arc::clone(&self.jsx_runtime_import_specifiers),
+            synthetic_import_regions: Arc::clone(&self.synthetic_import_regions),
             processed: self.processed,
             project_reference_file_mapper: self.project_reference_file_mapper,
             processing_diagnostics: Mutex::new(self.processing_diagnostics().clone()),
@@ -981,6 +986,13 @@ impl Program {
     ) {
         let factory = ast::NodeFactory::default();
         for &file in std::iter::once(&new_file).chain(supplemental_files) {
+            if !self.import_helpers_import_specifiers.contains_key(file.path())
+                && !self.jsx_runtime_import_specifiers.contains_key(file.path())
+            {
+                continue;
+            }
+            let region = tsrs_core::arena::Region::new(4 << 10);
+            let scope = region.enter();
             if self.import_helpers_import_specifiers.contains_key(file.path()) {
                 let specifier = crate::fileloader::new_synthetic_import(&factory, "tslib", file);
                 Arc::make_mut(&mut self.import_helpers_import_specifiers)
@@ -998,6 +1010,9 @@ impl Program {
                     }),
                 );
             }
+            drop(scope);
+            region.trim();
+            Arc::make_mut(&mut self.synthetic_import_regions).insert(file.path().clone(), region);
         }
     }
 

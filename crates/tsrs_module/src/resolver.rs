@@ -604,7 +604,8 @@ impl DefaultResolver<'_> {
             None,
         );
         if tspath::is_external_module_name_relative(module_name) {
-            let package_directory = tspath::combine_paths(&containing_directory, &[module_name]);
+            let package_directory =
+                tspath::get_normalized_absolute_path(module_name, &containing_directory);
             if self.host.fs().directory_exists(&package_directory) {
                 let (original_path, path) =
                     state.get_original_and_resolved_file_name(&package_directory);
