@@ -181,7 +181,7 @@ fn get_symbol_of_call_hierarchy_declaration(c: &mut Checker, node: P<Node>) -> O
 fn get_call_hierarchy_item_name(program: &'static Program, node: P<Node>) -> (String, u32, u32) {
     if ast::is_source_file(node) {
         let source_file = node.as_source_file();
-        return (tspath::get_base_file_name(source_file.original_file_name()).to_string(), 0, 0);
+        return (tspath::get_base_file_name(source_file.original_file_name()), 0, 0);
     }
 
     if (ast::is_function_declaration(node) || ast::is_class_declaration(node))

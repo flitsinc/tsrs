@@ -1516,7 +1516,7 @@ fn get_spread_element_count(node: P<Node>, c: &mut Checker) -> usize {
 }
 
 // signaturehelp.go:1098
-pub(crate) fn get_required_tuple_element_count(tuple_type: &'static checker::TupleType) -> usize {
+pub fn get_required_tuple_element_count(tuple_type: &'static checker::TupleType) -> usize {
     let fixed_length = tuple_type.fixed_length();
     tuple_type.element_infos()[..fixed_length]
         .iter()

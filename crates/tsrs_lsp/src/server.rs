@@ -2061,7 +2061,7 @@ impl Server {
                 .iter()
                 .map(|root| tsrs_ls::WorkspaceFolder {
                     path: root.clone(),
-                    name: tspath::get_base_file_name(root).to_string(),
+                    name: tspath::get_base_file_name(root),
                 })
                 .collect(),
         };
