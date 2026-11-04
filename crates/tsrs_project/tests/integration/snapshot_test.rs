@@ -1,10 +1,12 @@
 // Port of tsc/internal/project/snapshot_test.go (TestSnapshot). Only the subtests that exercise
 // Session.APIUpdate are ported so far.
 
+use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
 use tsrs_core::collections::new_set_from_items;
 use tsrs_core::context::Context;
+use tsrs_core::tspath::Path;
 use tsrs_lsproto as lsproto;
 use tsrs_vfs::{FS, bundled, vfstest};
 
@@ -39,6 +41,57 @@ fn setup(files: &[(&str, &str)]) -> Arc<Session> {
         parse_cache: None,
         content_mapped_parse_cache: None,
     })
+}
+
+#[test]
+fn close_projects_retains_the_default_project_of_api_opened_files() {
+    let session = setup(&[
+        ("/src/tsconfig.json", r#"{"compilerOptions":{"noLib":true},"files":["main.ts"]}"#),
+        ("/src/main.ts", "export const value = 1;"),
+    ]);
+    let ctx = Context::background();
+    let config = Path::from("/src/tsconfig.json");
+    let file = Path::from("/src/main.ts");
+    let snapshot = session
+        .api_update(
+            &ctx,
+            &FileChangeSummary::default(),
+            Some(Arc::new(APISnapshotRequest {
+                open_projects: Some(new_set_from_items([config.0.clone()])),
+                open_files: Some(FxHashMap::from_iter([(file.clone(), file.0.clone())])),
+                ..Default::default()
+            })),
+        )
+        .unwrap();
+    let project = snapshot.project_collection.configured_project(&config).unwrap();
+    let program = project.get_program().unwrap();
+    snapshot.deref();
+    let snapshot = session
+        .api_update(
+            &ctx,
+            &FileChangeSummary::default(),
+            Some(Arc::new(APISnapshotRequest {
+                close_projects: Some(new_set_from_items([config.clone()])),
+                ..Default::default()
+            })),
+        )
+        .unwrap();
+    let retained = snapshot.project_collection.configured_project(&config).unwrap();
+    assert!(std::ptr::eq(program, retained.get_program().unwrap()));
+    snapshot.deref();
+    let snapshot = session
+        .api_update(
+            &ctx,
+            &FileChangeSummary::default(),
+            Some(Arc::new(APISnapshotRequest {
+                close_files: Some(new_set_from_items([file])),
+                ..Default::default()
+            })),
+        )
+        .unwrap();
+    assert!(snapshot.project_collection.configured_project(&config).is_none());
+    snapshot.deref();
+    session.close();
 }
 
 // snapshot_test.go:154
