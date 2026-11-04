@@ -6,8 +6,8 @@ use tsrs_diagnostics::{Category, Key, format, format_strings, key_to_message, lo
 
 #[test]
 fn message_count_matches_go() {
-    // Count of `&Message{` entries in diagnostics_generated.go at source 79.
-    assert_eq!(ALL_MESSAGES.len(), 2229);
+    // Count of messages in the pinned TypeScript e2bc2bcb838e reference.
+    assert_eq!(ALL_MESSAGES.len(), 2231);
     let keys: FxHashSet<&str> = ALL_MESSAGES.iter().map(|m| m.key().as_str()).collect();
     assert_eq!(keys.len(), ALL_MESSAGES.len());
     let codes: FxHashSet<i32> = ALL_MESSAGES.iter().map(|m| m.code()).collect();
