@@ -100,9 +100,13 @@ pub fn children_property_mask(node: P<Node>) -> u8 {
             let n = node.as_case_block();
             present(n.clauses()) as u8
         }
-        Kind::CaseClause | Kind::DefaultClause => {
-            let n = node.as_case_or_default_clause();
+        Kind::CaseClause => {
+            let n = node.as_case_clause();
             (present(n.expression()) as u8) | ((present(n.statements()) as u8) << 1)
+        }
+        Kind::DefaultClause => {
+            let n = node.as_default_clause();
+            present(n.statements()) as u8
         }
         Kind::ThrowStatement => {
             let n = node.as_throw_statement();
@@ -1408,11 +1412,15 @@ impl Decoder<'_> {
                 let clauses = from_list(self.single_node_list_child(child_indices))?;
                 f.new_case_block(clauses)
             }
-            Kind::CaseClause | Kind::DefaultClause => {
+            Kind::CaseClause => {
                 let mut it = ChildIter::new(child_indices);
                 let expression = from_node(self.node_at_opt(it.next_if(mask, 0)))?;
                 let statements = from_list(self.list_at(it.next_if(mask, 1)))?;
-                f.new_case_or_default_clause(kind, expression, statements)
+                f.new_case_clause(expression, statements)
+            }
+            Kind::DefaultClause => {
+                let statements = from_list(self.single_node_list_child(child_indices))?;
+                f.new_default_clause(statements)
             }
             Kind::ThrowStatement => {
                 let expression = from_node(self.single_child(child_indices))?;

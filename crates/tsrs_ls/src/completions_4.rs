@@ -1321,7 +1321,6 @@ impl LanguageService {
         case_block: P<Node>,
         file: P<SourceFile>,
         position: u32,
-        options: P<CompilerOptions>,
         program: &'static Program,
         c: &mut Checker,
     ) -> Result<Option<lsproto::CompletionItem>, lsproto::Error> {
@@ -1331,7 +1330,6 @@ impl LanguageService {
         if switch_type.is_union() && switch_type.types().iter().all(|&t| is_literal(t)) {
             // Collect constant values in existing clauses.
             let mut tracker = new_case_clause_tracker(c, clauses);
-            let target = options.get_emit_script_target();
             let quote_preference = lsutil::get_quote_preference(file, self.user_preferences());
             // Tolerate a nil import adder in untitled files.
             let mut import_adder: Option<Box<dyn ImportAdder>> = None;
@@ -1379,8 +1377,7 @@ impl LanguageService {
                     ) else {
                         return Ok(None);
                     };
-                    let Some(expr) =
-                        type_node_to_expression(type_node, target, quote_preference, &factory)
+                    let Some(expr) = type_node_to_expression(type_node, quote_preference, &factory)
                     else {
                         return Ok(None);
                     };
@@ -1447,13 +1444,7 @@ impl LanguageService {
 
             let new_clauses: Vec<P<Node>> = elements
                 .iter()
-                .map(|&element| {
-                    factory.new_case_or_default_clause(
-                        Kind::CaseClause,
-                        Some(element),
-                        factory.new_node_list(Vec::new()),
-                    )
-                })
+                .map(|&element| factory.new_case_clause(element, factory.new_node_list(Vec::new())))
                 .collect();
             let new_line_char = self.format_options().new_line_character.clone();
             let mut printer = create_snippet_printer(
@@ -1517,25 +1508,22 @@ impl LanguageService {
 // completions.go:6706
 fn type_node_to_expression(
     type_node: P<Node>,
-    target: tsrs_core::ScriptTarget,
     quote_preference: QuotePreference,
     factory: &NodeFactory,
 ) -> Option<P<Node>> {
     match type_node.kind() {
         Kind::TypeReference => {
             let type_name = type_node.as_type_reference_node().type_name;
-            Some(entity_name_to_expression(type_name, target, quote_preference, factory))
+            Some(entity_name_to_expression(type_name, factory))
         }
         Kind::IndexedAccessType => {
             let object_expression = type_node_to_expression(
                 type_node.as_indexed_access_type_node().object_type,
-                target,
                 quote_preference,
                 factory,
             );
             let index_expression = type_node_to_expression(
                 type_node.as_indexed_access_type_node().index_type,
-                target,
                 quote_preference,
                 factory,
             );
@@ -1578,7 +1566,6 @@ fn type_node_to_expression(
         Kind::ParenthesizedType => {
             let expr = type_node_to_expression(
                 type_node.as_parenthesized_type_node().type_,
-                target,
                 quote_preference,
                 factory,
             )?;
@@ -1587,12 +1574,9 @@ fn type_node_to_expression(
             }
             Some(factory.new_parenthesized_expression(expr))
         }
-        Kind::TypeQuery => Some(entity_name_to_expression(
-            type_node.as_type_query_node().expr_name,
-            target,
-            quote_preference,
-            factory,
-        )),
+        Kind::TypeQuery => {
+            Some(entity_name_to_expression(type_node.as_type_query_node().expr_name, factory))
+        }
         Kind::ImportType => {
             panic!(
                 "Debug Failure. We should not get an import type after calling 'typeToAutoImportableTypeNode'."
@@ -1603,26 +1587,12 @@ fn type_node_to_expression(
 }
 
 // completions.go:6768
-#[expect(
-    clippy::only_used_in_recursion,
-    reason = "The pinned Go function also carries these parameters through recursion without otherwise reading them."
-)]
-fn entity_name_to_expression(
-    entity_name: P<Node>,
-    target: tsrs_core::ScriptTarget,
-    quote_preference: QuotePreference,
-    factory: &NodeFactory,
-) -> P<Node> {
+fn entity_name_to_expression(entity_name: P<Node>, factory: &NodeFactory) -> P<Node> {
     if ast::is_identifier(entity_name) {
         return entity_name;
     }
     factory.new_property_access_expression(
-        entity_name_to_expression(
-            entity_name.as_qualified_name().left,
-            target,
-            quote_preference,
-            factory,
-        ),
+        entity_name_to_expression(entity_name.as_qualified_name().left, factory),
         None, /*questionDotToken*/
         entity_name.as_qualified_name().right,
         NodeFlags::None,

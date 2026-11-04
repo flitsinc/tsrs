@@ -2203,11 +2203,8 @@ impl StructuredType {
             return members.lookup(name);
         }
         let lazy = self.get_lazy_state()?;
-        let index = lazy.layout.member_info_map.binary_search_by(|&(n, _)| n.cmp(name)).ok()?;
-        self.get_property_at(
-            c,
-            lazy.layout.member_infos[lazy.layout.member_info_map[index].1].slot_index,
-        )
+        let index = lazy.layout.members?.find(name)?;
+        self.get_property_at(c, index)
     }
     pub(crate) fn get_property_at(&self, c: &mut Checker, index: usize) -> Option<P<Symbol>> {
         let Some(lazy) = self.get_lazy_state() else {
@@ -2216,11 +2213,14 @@ impl StructuredType {
         let properties = lazy.property_slots();
         let mut member = properties[index].get();
         if member.is_none() {
-            let info = lazy.layout.member_infos[index];
-            member = if let Some(base_index) = info.base_index {
-                c.get_property_of_type(lazy.base_types[base_index], info.symbol.name())
+            let symbol = lazy.layout.members.unwrap().symbol_at(index);
+            member = if let Some(base_index) = lazy.layout.base_indices[index] {
+                c.get_property_of_type(
+                    lazy.base_types[base_index.get() as usize - 1],
+                    symbol.name(),
+                )
             } else {
-                Some(c.instantiate_symbol(info.symbol, lazy.mapper.get()))
+                Some(c.instantiate_symbol(symbol, lazy.mapper.get()))
             };
             properties[index].set(member);
         }
@@ -2228,7 +2228,9 @@ impl StructuredType {
     }
     pub(crate) fn has_properties(&self) -> bool {
         self.resolved.get().is_some_and(|r| !r.properties.get().get().is_empty())
-            || self.get_lazy_state().is_some_and(|s| !s.layout.member_infos.is_empty())
+            || self
+                .get_lazy_state()
+                .is_some_and(|s| s.layout.members.is_some_and(|members| !members.is_empty()))
     }
     #[inline]
     pub(crate) fn set_members(&self, members: Option<P<SymbolTable>>) {
@@ -2239,8 +2241,9 @@ impl StructuredType {
         if let Some(lazy) = self.get_lazy_state()
             && !lazy.properties_resolved.get()
         {
-            let mut properties = Vec::with_capacity(lazy.layout.member_infos.len());
-            for index in 0..lazy.layout.member_infos.len() {
+            let len = lazy.layout.members.map_or(0, |members| members.len());
+            let mut properties = Vec::with_capacity(len);
+            for index in 0..len {
                 properties
                     .push(self.get_property_at(c, index).expect("layout member must resolve"));
             }
@@ -2353,7 +2356,12 @@ pub struct LazyState {
 impl LazyState {
     pub(crate) fn property_slots(&self) -> &'static [OvCell<Option<P<Symbol>>>] {
         if self.properties.get().is_empty() {
-            self.properties.set(alloc_vec(vec![OvCell::default(); self.layout.member_infos.len()]));
+            self.properties.set(alloc_vec(vec![
+                OvCell::default();
+                self.layout
+                    .members
+                    .map_or(0, |members| members.len())
+            ]));
         }
         self.properties.get()
     }
@@ -2361,17 +2369,9 @@ impl LazyState {
 
 pub struct MemberLayout {
     pub(crate) id: u32,
-    // Sorted name/index pairs avoid a heap allocation retained by an arena object.
-    pub(crate) member_info_map: &'static [(&'static str, usize)],
-    pub(crate) member_infos: &'static [MemberInfo],
+    pub(crate) members: Option<P<SymbolTable>>,
+    pub(crate) base_indices: &'static [Option<NonZeroU32>],
     pub(crate) layout_properties: OvCell<Option<&'static [P<Symbol>]>>,
-}
-
-#[derive(Clone, Copy)]
-pub struct MemberInfo {
-    pub(crate) symbol: P<Symbol>,
-    pub(crate) base_index: Option<usize>,
-    pub(crate) slot_index: usize,
 }
 
 #[derive(Default)]

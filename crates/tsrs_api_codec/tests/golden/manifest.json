@@ -1,14 +1,15 @@
 {
   "server": {
     "source": "microsoft/TypeScript",
-    "commit": "2f9fd09a104ef14268944a0aeb9cdc4d80abb6a6",
+    "commit": "e2bc2bcb838e60fd44c02f0b224b8201a4d7ff5b",
     "build": "cd ts-ref/tsc && GOWORK=off go build ./cmd/tsc",
-    "go": "go version go1.27.0 darwin/arm64",
+    "go": "go1.27.3 darwin/arm64",
     "version": "Version 7.1.0-dev",
-    "sha256": "ed6cfd9b794cbffe6126fa6eaa75cd66acbb2f9eaa66c1bb497bd9bed8d427c9"
+    "sha256": "e641e39f0a937185b20aeb75c43c837cf78e48f98724e7fd9e23aec2e44bd8d9"
   },
   "client": {
-    "package": "tsrs@0.0.0-set-by-npm-build"
+    "package": "typescript@7.1.0-dev.20261104.1",
+    "gitHead": "e2bc2bcb838e60fd44c02f0b224b8201a4d7ff5b"
   },
   "files": {
     "basic.ts": {

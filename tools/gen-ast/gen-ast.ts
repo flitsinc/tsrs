@@ -153,7 +153,8 @@ const SURFACE = [
     ["","fn","CallExpression","clone_node for_each_child visit_each_child"],
     ["","fn","CallSignatureDeclaration","clone_node for_each_child visit_each_child"],
     ["","fn","CaseBlock","clone_node for_each_child visit_each_child"],
-    ["","fn","CaseOrDefaultClause","clone_node for_each_child visit_each_child"],
+    ["","fn","CaseClause","clone_node for_each_child visit_each_child"],
+    ["","fn","DefaultClause","clone_node for_each_child visit_each_child"],
     ["","fn","CatchClause","clone_node for_each_child visit_each_child"],
     ["","fn","ClassDeclaration","clone_node for_each_child set_modifiers visit_each_child"],
     ["","fn","ClassExpression","clone_node for_each_child set_modifiers visit_each_child"],
@@ -1019,6 +1020,9 @@ function genNewFactory(node: NodeType) {
             if (kinds.length === 0) throw new Error(`${node.name}: no canonical kinds`);
             w(`        assert!(matches!(kind, ${kinds.map(kind => `Kind::${kind}`).join(" | ")}), "Invalid node kind for ${node.name}");`);
         }
+        if (node.name === "ArrowFunction") {
+            w("        let equals_greater_than_token = Some(equals_greater_than_token.unwrap_or_else(|| self.new_token(Kind::EqualsGreaterThanToken)));");
+        }
         const values = new Map<string, string>();
         for (const p of params) {
             if (p.m.isKindParam() || isNodeFlagsMember(p.m)) continue;
@@ -1417,6 +1421,7 @@ function genNodeImpl() {
         ["function_like_data", "FunctionLikeBase"],
         ["class_like_data", "ClassLikeBase"],
         ["body_data", "BodyBase"],
+        ["case_or_default_clause_data", "CaseOrDefaultClauseBase"],
         ["literal_like_data", "LiteralLikeNodeBase"],
         ["template_literal_like_data", "TemplateLiteralLikeNodeBase"],
     ];

@@ -644,7 +644,7 @@ fn get_outlining_span_for_node(
             )
         }
         Kind::CaseClause | Kind::DefaultClause => {
-            span_for_node_array(ctx, n.as_case_or_default_clause().statements, source_file, l)
+            span_for_node_array(ctx, n.statement_list().unwrap(), source_file, l)
         }
         Kind::ObjectLiteralExpression => {
             let parent = n.parent().unwrap();

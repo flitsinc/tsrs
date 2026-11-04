@@ -26,7 +26,8 @@ arms are generated from exactly this table.
 | WithStatement | WithStatement | children | Expression:node, Statement:node |  |
 | SwitchStatement | SwitchStatement | children | Expression:node, CaseBlock:node |  |
 | CaseBlock | CaseBlock | children | Clauses:nodeList |  |
-| CaseOrDefaultClause | CaseClause, DefaultClause | children | Expression:node, Statements:nodeList |  |
+| CaseClause | CaseClause | children | Expression:node, Statements:nodeList |  |
+| DefaultClause | DefaultClause | children | Statements:nodeList |  |
 | ThrowStatement | ThrowStatement | children | Expression:node |  |
 | TryStatement | TryStatement | children | TryBlock:node, CatchClause:node, FinallyBlock:node |  |
 | CatchClause | CatchClause | children | VariableDeclaration:node, Block:node |  |
@@ -201,4 +202,4 @@ arms are generated from exactly this table.
 | JSDocTypeLiteral | JSDocTypeLiteral | children | JSDocPropertyTags:rawNodeList | IsArrayType@0/1 |
 | JSDocParameterOrPropertyTag | JSDocParameterTag, JSDocPropertyTag | children | TagName:node, name:node, TypeExpression:node, Comment:nodeList | IsBracketed@0/1, IsNameFirst@1/1 |
 
-192 node structs, 381 kinds.
+193 node structs, 381 kinds.

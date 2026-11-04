@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { args, read, write, requireValue, main } from "../lib/cli.mjs";
 import { screamingSnakeCase as scream } from "../lib/rust-names.mjs";
+import { pathToFileURL } from "node:url";
+import path from "node:path";
 const snake = (s) =>
     s
         .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
@@ -46,11 +48,21 @@ function field(key, value) {
         return `${key === "IsTSConfigOnly" ? "is_tsconfig_only" : snake(key)}: ${value}`;
     throw new Error(`unknown field ${key}: ${value}`);
 }
-main(() => {
+main(async () => {
     const a = args("Convert Go option declarations into Rust // BEGIN GENERATED regions. <go-file> <rust-file>", {
         vars: null,
     });
     requireValue(a._.length === 2, "Go and Rust file paths are required");
+    // These flags moved out of Go's declarations; use the pinned shared model rather
+    // than carrying the previous Rust generation's values forward across upgrades.
+    const { options } = await import(pathToFileURL(path.resolve(import.meta.dirname, "../../ts-ref/tools/scripts/tsc/options.ts")));
+    const migratedMetadata = new Map([
+        ["affects_declaration_path", "affectsDeclarationPath"],
+        ["affects_semantic_diagnostics", "affectsSemanticDiagnostics"],
+        ["affects_build_info", "affectsBuildInfo"],
+        ["affects_emit", "affectsEmit"],
+    ]);
+    const metadata = new Map(options.compilerOptions.filter(option => option.declaration).map(option => [option.name, option.declaration]));
     const go = read(a._[0]),
         target = read(a._[1]),
         previous = new Map(),
@@ -87,7 +99,12 @@ main(() => {
             present = new Set(fields.map((s) => s.split(":")[0]));
         if (name)
             for (const [k, v] of Object.entries(previous.get(JSON.stringify([name[1], short?.[1] ?? ""])) ?? {}))
-                if (!present.has(k)) fields.push(`${k}: ${v}`);
+                if (!present.has(k) && !(metadata.has(name[1]) && migratedMetadata.has(k))) fields.push(`${k}: ${v}`);
+        if (name && metadata.has(name[1])) {
+            for (const [field, key] of migratedMetadata) {
+                if (!present.has(field) && metadata.get(name[1])[key] === true) fields.push(`${field}: true`);
+            }
+        }
         const order = fieldOrder.get(JSON.stringify([name?.[1], short?.[1] ?? ""]));
         if (order) fields.sort((a, b) => {
             const position = (field) => {

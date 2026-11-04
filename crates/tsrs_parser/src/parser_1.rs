@@ -142,6 +142,8 @@ pub struct Parser {
 
     pub(crate) current_parent: Option<P<Node>>,
     pub(crate) reparsed_clones: Vec<P<Node>>,
+    common_js_module_indicator: Option<P<Node>>,
+    jsdoc_has_common_js_construct: bool,
     // tsrs-only: the deep-clone visitor behind `add_deep_clone_reparse`, built on the file's first JSDoc clone and
     // reused for the rest (notes/perf-reparse-cloner.md).
     pub(crate) reparse_cloner: Option<ast::deepclone::ReparseCloner>,
@@ -160,6 +162,27 @@ pub struct Parser {
 
 pub fn new_parser() -> Parser {
     new_parser_with(NodeFactory::default())
+}
+
+fn find_common_js_module_indicator(node: P<Node>) -> Option<P<Node>> {
+    if is_common_js_module_indicator(node) {
+        return Some(node);
+    }
+    let mut found = None;
+    node.for_each_child(&mut |child| {
+        found = find_common_js_module_indicator(child);
+        found.is_some()
+    });
+    found
+}
+
+fn is_common_js_module_indicator(node: P<Node>) -> bool {
+    matches!(
+        ast::get_assignment_declaration_kind(node),
+        ast::JSDeclarationKind::ModuleExports
+            | ast::JSDeclarationKind::ExportsProperty
+            | ast::JSDeclarationKind::ObjectDefinePropertyExports
+    ) || ast::is_require_call(node, false /*requireStringLiteralLikeArgument*/)
 }
 
 fn new_parser_with(factory: NodeFactory) -> Parser {
@@ -195,6 +218,8 @@ fn new_parser_with(factory: NodeFactory) -> Parser {
         reparse_list: Vec::new(),
         current_parent: None,
         reparsed_clones: Vec::new(),
+        common_js_module_indicator: None,
+        jsdoc_has_common_js_construct: false,
         reparse_cloner: None,
         lazy_dts: false,
         lazy_lists: Vec::new(),
@@ -649,6 +674,8 @@ pub struct ParserState {
     lazy_lists_len: usize,
     statement_has_await_identifier: bool,
     has_parse_error: bool,
+    common_js_module_indicator: Option<P<Node>>,
+    jsdoc_has_common_js_construct: bool,
     // Rolling back a parse also discards the arena memory it allocated (notes/mem-recycle.md). Parser data that
     // `rewind` does not truncate and that can receive nodes from inside a speculation (`reparse_list`,
     // `jsdoc_diagnostics`, the scanner's number caches) calls `tsrs_core::arena_pin`, which cancels that.
@@ -668,6 +695,8 @@ impl Parser {
             lazy_lists_len: self.lazy_lists.len(),
             statement_has_await_identifier: self.statement_has_await_identifier,
             has_parse_error: self.has_parse_error,
+            common_js_module_indicator: self.common_js_module_indicator,
+            jsdoc_has_common_js_construct: self.jsdoc_has_common_js_construct,
         }
     }
 
@@ -689,6 +718,8 @@ impl Parser {
         self.lazy_lists.truncate(state.lazy_lists_len);
         self.statement_has_await_identifier = state.statement_has_await_identifier;
         self.has_parse_error = state.has_parse_error;
+        self.common_js_module_indicator = state.common_js_module_indicator;
+        self.jsdoc_has_common_js_construct = state.jsdoc_has_common_js_construct;
     }
 
     // Keep speculative scanner snapshots and rollback bookkeeping out of callers' common-path frames.
@@ -798,6 +829,10 @@ impl Parser {
             let reparse = self.reparse_top_level_await(result);
             let reparse = self.finish_node(reparse, pos);
             if node != reparse {
+                // Reparsing can change which CommonJS constructs exist, so recompute from the final tree.
+                if self.context_flags.intersects(NodeFlags::JavaScriptFile) {
+                    self.common_js_module_indicator = find_common_js_module_indicator(reparse);
+                }
                 result = reparse.as_source_file_p();
                 self.finish_source_file(result, is_declaration_file);
             }
@@ -834,6 +869,36 @@ impl Parser {
         self.reparsed_clones.sort_by(|a, b| ast::compare_node_positions(*a, *b));
         result.reparsed_clones.set(alloc_slice(&self.reparsed_clones));
         ast::set_external_module_indicator(&result, self.opts.external_module_indicator_options);
+        // CommonJS constructs only make a file a module when it has no ES module syntax.
+        if result.external_module_indicator.get().is_none()
+            || result.external_module_indicator.get() == Some(result.as_node())
+        {
+            if self.common_js_module_indicator.is_none() && self.jsdoc_has_common_js_construct {
+                // Only reparsed JSDoc clones that survive into the tree are bound.
+                self.common_js_module_indicator = find_common_js_module_indicator(result.as_node());
+            }
+            result.common_js_module_indicator.set(self.common_js_module_indicator);
+        } else {
+            result.common_js_module_indicator.set(None);
+        }
+    }
+
+    // checkCommonJSModuleIndicator records the first CommonJS construct in a JavaScript file
+    // (a require call, or an assignment or Object.defineProperty on exports or module.exports).
+    // The binder binds the same constructs as CommonJS exports. Nodes parsed within JSDoc are
+    // only bound if reparsed, so for those we just note that the final tree needs checking.
+    pub(crate) fn check_common_js_module_indicator(&mut self, node: P<Node>) -> P<Node> {
+        if self.common_js_module_indicator.is_none()
+            && node.flags().intersects(NodeFlags::JavaScriptFile)
+            && is_common_js_module_indicator(node)
+        {
+            if node.flags().intersects(NodeFlags::JSDoc) {
+                self.jsdoc_has_common_js_construct = true;
+            } else {
+                self.common_js_module_indicator = Some(node);
+            }
+        }
+        node
     }
 
     fn create_jsdoc_cache(&self) -> FxHashMap<P<Node>, &'static [P<Node>]> {
@@ -2200,8 +2265,7 @@ impl Parser {
         self.parse_expected(Kind::ColonToken);
         let statements =
             self.parse_list(ParsingContext::SwitchClauseStatements, Parser::parse_statement);
-        let result =
-            self.factory.new_case_or_default_clause(Kind::CaseClause, Some(expression), statements);
+        let result = self.factory.new_case_clause(expression, statements);
         let result = self.finish_node(result, pos);
         self.with_jsdoc(result, jsdoc);
         result
@@ -2214,11 +2278,7 @@ impl Parser {
         self.parse_expected(Kind::ColonToken);
         let statements =
             self.parse_list(ParsingContext::SwitchClauseStatements, Parser::parse_statement);
-        let result = self.factory.new_case_or_default_clause(
-            Kind::DefaultClause,
-            None, /*expression*/
-            statements,
-        );
+        let result = self.factory.new_default_clause(statements);
         let result = self.finish_node(result, pos);
         self.with_jsdoc(result, jsdoc);
         result

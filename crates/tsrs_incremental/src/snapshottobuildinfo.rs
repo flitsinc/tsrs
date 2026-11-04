@@ -488,6 +488,15 @@ impl ToBuildInfo<'_> {
                 .get_or_insert_with(JsonMap::new)
                 .insert(name.to_string(), option_value_to_json(&value));
         }
+        // The inherited paths base is derived, not a declared compiler option.
+        let paths_base_path = options.get_paths_base_path("");
+        if !paths_base_path.is_empty() {
+            let relative_path = self.relative_to_build_info(&Path::from(paths_base_path.as_str()));
+            self.build_info
+                .options
+                .get_or_insert_with(JsonMap::new)
+                .insert("pathsBasePath".to_string(), Value::String(relative_path));
+        }
     }
 
     // snapshottobuildinfo.go:307

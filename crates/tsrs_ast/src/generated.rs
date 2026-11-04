@@ -173,6 +173,26 @@ pub struct JSDocTagBase {
     pub(crate) comment: Option<P<NodeList>>,
 }
 
+pub struct CaseOrDefaultClauseBase {
+    pub statements: P<NodeList>,
+    pub fallthrough_flow_node: OwnedCell<Option<P<FlowNode>>>,
+}
+
+impl CaseOrDefaultClauseBase {
+    #[inline]
+    pub fn statements(&self) -> P<NodeList> {
+        self.statements
+    }
+    #[inline]
+    pub fn fallthrough_flow_node(&self) -> Option<P<FlowNode>> {
+        self.fallthrough_flow_node.get()
+    }
+    #[inline]
+    pub fn set_fallthrough_flow_node(&self, value: Option<P<FlowNode>>) {
+        self.fallthrough_flow_node.set(value);
+    }
+}
+
 pub struct JSDocCommentBase {
     text: &'static [&'static str],
 }
@@ -426,28 +446,46 @@ impl CaseBlock {
     }
 }
 
-pub struct CaseOrDefaultClause {
-    pub expression: Option<P<Node>>,
-    pub statements: P<NodeList>,
-    pub fallthrough_flow_node: OwnedCell<Option<P<FlowNode>>>,
+pub struct CaseClause {
+    pub case_or_default_clause_base: CaseOrDefaultClauseBase,
+    pub expression: P<Node>,
 }
 
-impl CaseOrDefaultClause {
+impl CaseClause {
     #[inline]
-    pub fn expression(&self) -> Option<P<Node>> {
+    pub fn expression(&self) -> P<Node> {
         self.expression
     }
     #[inline]
     pub fn statements(&self) -> P<NodeList> {
-        self.statements
+        self.case_or_default_clause_base.statements
     }
     #[inline]
     pub fn fallthrough_flow_node(&self) -> Option<P<FlowNode>> {
-        self.fallthrough_flow_node.get()
+        self.case_or_default_clause_base.fallthrough_flow_node.get()
     }
     #[inline]
     pub fn set_fallthrough_flow_node(&self, value: Option<P<FlowNode>>) {
-        self.fallthrough_flow_node.set(value);
+        self.case_or_default_clause_base.fallthrough_flow_node.set(value);
+    }
+}
+
+pub struct DefaultClause {
+    pub case_or_default_clause_base: CaseOrDefaultClauseBase,
+}
+
+impl DefaultClause {
+    #[inline]
+    pub fn statements(&self) -> P<NodeList> {
+        self.case_or_default_clause_base.statements
+    }
+    #[inline]
+    pub fn fallthrough_flow_node(&self) -> Option<P<FlowNode>> {
+        self.case_or_default_clause_base.fallthrough_flow_node.get()
+    }
+    #[inline]
+    pub fn set_fallthrough_flow_node(&self, value: Option<P<FlowNode>>) {
+        self.case_or_default_clause_base.fallthrough_flow_node.set(value);
     }
 }
 
@@ -3940,7 +3978,8 @@ pub enum NodeData {
     WithStatement(&'static WithStatement),
     SwitchStatement(&'static SwitchStatement),
     CaseBlock(&'static CaseBlock),
-    CaseOrDefaultClause(&'static CaseOrDefaultClause),
+    CaseClause(&'static CaseClause),
+    DefaultClause(&'static DefaultClause),
     ThrowStatement(&'static ThrowStatement),
     TryStatement(&'static TryStatement),
     CatchClause(&'static CatchClause),
@@ -4140,7 +4179,8 @@ pub enum NodeDataTag {
     WithStatement,
     SwitchStatement,
     CaseBlock,
-    CaseOrDefaultClause,
+    CaseClause,
+    DefaultClause,
     ThrowStatement,
     TryStatement,
     CatchClause,
@@ -4320,7 +4360,7 @@ pub enum NodeDataTag {
 
 impl NodeDataTag {
     /// The number of variants: every `u8` below it is a tag (`NodeHeaderWord::data_tag` checks this in debug builds).
-    pub(crate) const COUNT: u8 = 194;
+    pub(crate) const COUNT: u8 = 195;
 }
 
 impl NodePayload for Identifier {
@@ -4374,8 +4414,11 @@ impl NodePayload for SwitchStatement {
 impl NodePayload for CaseBlock {
     const TAG: NodeDataTag = NodeDataTag::CaseBlock;
 }
-impl NodePayload for CaseOrDefaultClause {
-    const TAG: NodeDataTag = NodeDataTag::CaseOrDefaultClause;
+impl NodePayload for CaseClause {
+    const TAG: NodeDataTag = NodeDataTag::CaseClause;
+}
+impl NodePayload for DefaultClause {
+    const TAG: NodeDataTag = NodeDataTag::DefaultClause;
 }
 impl NodePayload for ThrowStatement {
     const TAG: NodeDataTag = NodeDataTag::ThrowStatement;
@@ -4909,7 +4952,8 @@ impl Node {
             NodeDataTag::WithStatement => NodeData::WithStatement(self.payload()),
             NodeDataTag::SwitchStatement => NodeData::SwitchStatement(self.payload()),
             NodeDataTag::CaseBlock => NodeData::CaseBlock(self.payload()),
-            NodeDataTag::CaseOrDefaultClause => NodeData::CaseOrDefaultClause(self.payload()),
+            NodeDataTag::CaseClause => NodeData::CaseClause(self.payload()),
+            NodeDataTag::DefaultClause => NodeData::DefaultClause(self.payload()),
             NodeDataTag::ThrowStatement => NodeData::ThrowStatement(self.payload()),
             NodeDataTag::TryStatement => NodeData::TryStatement(self.payload()),
             NodeDataTag::CatchClause => NodeData::CatchClause(self.payload()),
@@ -5288,10 +5332,19 @@ impl Node {
         self.payload()
     }
     #[inline]
-    pub fn as_case_or_default_clause(&self) -> &'static CaseOrDefaultClause {
+    pub fn as_case_clause(&self) -> &'static CaseClause {
         assert!(
-            self.data_tag() == NodeDataTag::CaseOrDefaultClause,
-            "as_case_or_default_clause called on {:?}",
+            self.data_tag() == NodeDataTag::CaseClause,
+            "as_case_clause called on {:?}",
+            self.kind()
+        );
+        self.payload()
+    }
+    #[inline]
+    pub fn as_default_clause(&self) -> &'static DefaultClause {
+        assert!(
+            self.data_tag() == NodeDataTag::DefaultClause,
+            "as_default_clause called on {:?}",
             self.kind()
         );
         self.payload()
@@ -6805,9 +6858,8 @@ impl Node {
             NodeDataTag::WithStatement => self.payload::<WithStatement>().for_each_child(v),
             NodeDataTag::SwitchStatement => self.payload::<SwitchStatement>().for_each_child(v),
             NodeDataTag::CaseBlock => self.payload::<CaseBlock>().for_each_child(v),
-            NodeDataTag::CaseOrDefaultClause => {
-                self.payload::<CaseOrDefaultClause>().for_each_child(v)
-            }
+            NodeDataTag::CaseClause => self.payload::<CaseClause>().for_each_child(v),
+            NodeDataTag::DefaultClause => self.payload::<DefaultClause>().for_each_child(v),
             NodeDataTag::ThrowStatement => self.payload::<ThrowStatement>().for_each_child(v),
             NodeDataTag::TryStatement => self.payload::<TryStatement>().for_each_child(v),
             NodeDataTag::CatchClause => self.payload::<CatchClause>().for_each_child(v),
@@ -7105,9 +7157,8 @@ impl Node {
                 self.payload::<SwitchStatement>().visit_each_child(node, v)
             }
             NodeDataTag::CaseBlock => self.payload::<CaseBlock>().visit_each_child(node, v),
-            NodeDataTag::CaseOrDefaultClause => {
-                self.payload::<CaseOrDefaultClause>().visit_each_child(node, v)
-            }
+            NodeDataTag::CaseClause => self.payload::<CaseClause>().visit_each_child(node, v),
+            NodeDataTag::DefaultClause => self.payload::<DefaultClause>().visit_each_child(node, v),
             NodeDataTag::ThrowStatement => {
                 self.payload::<ThrowStatement>().visit_each_child(node, v)
             }
@@ -7529,9 +7580,8 @@ impl Node {
             NodeDataTag::WithStatement => self.payload::<WithStatement>().clone_node(node, f),
             NodeDataTag::SwitchStatement => self.payload::<SwitchStatement>().clone_node(node, f),
             NodeDataTag::CaseBlock => self.payload::<CaseBlock>().clone_node(node, f),
-            NodeDataTag::CaseOrDefaultClause => {
-                self.payload::<CaseOrDefaultClause>().clone_node(node, f)
-            }
+            NodeDataTag::CaseClause => self.payload::<CaseClause>().clone_node(node, f),
+            NodeDataTag::DefaultClause => self.payload::<DefaultClause>().clone_node(node, f),
             NodeDataTag::ThrowStatement => self.payload::<ThrowStatement>().clone_node(node, f),
             NodeDataTag::TryStatement => self.payload::<TryStatement>().clone_node(node, f),
             NodeDataTag::CatchClause => self.payload::<CatchClause>().clone_node(node, f),
@@ -7866,8 +7916,8 @@ impl Node {
     }
 
     pub fn name(&self) -> Option<P<Node>> {
-        const OFFSETS: [(usize, bool); 194] = {
-            let mut offsets = [(0, false); 194];
+        const OFFSETS: [(usize, bool); 195] = {
+            let mut offsets = [(0, false); 195];
             offsets[NodeDataTag::VariableDeclaration as usize] =
                 (std::mem::offset_of!(NodeAlloc<VariableDeclaration>, data.name), false);
             offsets[NodeDataTag::ParameterDeclaration as usize] =
@@ -8000,8 +8050,8 @@ impl Node {
     }
 
     pub fn modifiers(&self) -> Option<P<ModifierList>> {
-        const OFFSETS: [usize; 194] = {
-            let mut offsets = [0; 194];
+        const OFFSETS: [usize; 195] = {
+            let mut offsets = [0; 195];
             offsets[NodeDataTag::VariableStatement as usize] =
                 std::mem::offset_of!(NodeAlloc<VariableStatement>, data.modifiers_base.modifiers);
             offsets[NodeDataTag::ParameterDeclaration as usize] = std::mem::offset_of!(
@@ -8231,8 +8281,8 @@ impl Node {
     }
 
     pub(crate) fn flow_node_base(&self) -> Option<&'static FlowNodeBase> {
-        const OFFSETS: [usize; 194] = {
-            let mut offsets = [0; 194];
+        const OFFSETS: [usize; 195] = {
+            let mut offsets = [0; 195];
             offsets[NodeDataTag::QualifiedName as usize] =
                 std::mem::offset_of!(NodeAlloc<QualifiedName>, data.flow_node_base);
             offsets[NodeDataTag::EmptyStatement as usize] =
@@ -8337,8 +8387,8 @@ impl Node {
     }
 
     pub fn declaration_data(&self) -> Option<&'static DeclarationBase> {
-        const OFFSETS: [usize; 194] = {
-            let mut offsets = [0; 194];
+        const OFFSETS: [usize; 195] = {
+            let mut offsets = [0; 195];
             offsets[NodeDataTag::VariableDeclaration as usize] =
                 std::mem::offset_of!(NodeAlloc<VariableDeclaration>, data.declaration_base);
             offsets[NodeDataTag::ParameterDeclaration as usize] =
@@ -8469,8 +8519,8 @@ impl Node {
     }
 
     pub fn exportable_data(&self) -> Option<&'static ExportableBase> {
-        const OFFSETS: [usize; 194] = {
-            let mut offsets = [0; 194];
+        const OFFSETS: [usize; 195] = {
+            let mut offsets = [0; 195];
             offsets[NodeDataTag::VariableDeclaration as usize] =
                 std::mem::offset_of!(NodeAlloc<VariableDeclaration>, data.exportable_base);
             offsets[NodeDataTag::BindingElement as usize] =
@@ -8515,8 +8565,8 @@ impl Node {
     }
 
     pub fn locals_container_data(&self) -> Option<&'static LocalsContainerBase> {
-        const OFFSETS: [usize; 194] = {
-            let mut offsets = [0; 194];
+        const OFFSETS: [usize; 195] = {
+            let mut offsets = [0; 195];
             offsets[NodeDataTag::ForStatement as usize] =
                 std::mem::offset_of!(NodeAlloc<ForStatement>, data.locals_container_base);
             offsets[NodeDataTag::ForInOrOfStatement as usize] =
@@ -8617,8 +8667,8 @@ impl Node {
     }
 
     pub fn function_like_data(&self) -> Option<&'static FunctionLikeBase> {
-        const OFFSETS: [usize; 194] = {
-            let mut offsets = [0; 194];
+        const OFFSETS: [usize; 195] = {
+            let mut offsets = [0; 195];
             offsets[NodeDataTag::FunctionDeclaration as usize] =
                 std::mem::offset_of!(NodeAlloc<FunctionDeclaration>, data.function_like_base);
             offsets[NodeDataTag::CallSignatureDeclaration as usize] =
@@ -8663,8 +8713,8 @@ impl Node {
     }
 
     pub fn class_like_data(&self) -> Option<&'static ClassLikeBase> {
-        const OFFSETS: [usize; 194] = {
-            let mut offsets = [0; 194];
+        const OFFSETS: [usize; 195] = {
+            let mut offsets = [0; 195];
             offsets[NodeDataTag::ClassDeclaration as usize] =
                 std::mem::offset_of!(NodeAlloc<ClassDeclaration>, data.class_like_base);
             offsets[NodeDataTag::ClassExpression as usize] =
@@ -8681,8 +8731,8 @@ impl Node {
     }
 
     pub fn body_data(&self) -> Option<&'static BodyBase> {
-        const OFFSETS: [usize; 194] = {
-            let mut offsets = [0; 194];
+        const OFFSETS: [usize; 195] = {
+            let mut offsets = [0; 195];
             offsets[NodeDataTag::FunctionDeclaration as usize] =
                 std::mem::offset_of!(NodeAlloc<FunctionDeclaration>, data.body_base);
             offsets[NodeDataTag::ConstructorDeclaration as usize] =
@@ -8710,9 +8760,27 @@ impl Node {
         Some(unsafe { tsrs_core::ptr::arena_neighbor(self, offset as isize) })
     }
 
+    pub fn case_or_default_clause_data(&self) -> Option<&'static CaseOrDefaultClauseBase> {
+        const OFFSETS: [usize; 195] = {
+            let mut offsets = [0; 195];
+            offsets[NodeDataTag::CaseClause as usize] =
+                std::mem::offset_of!(NodeAlloc<CaseClause>, data.case_or_default_clause_base);
+            offsets[NodeDataTag::DefaultClause as usize] =
+                std::mem::offset_of!(NodeAlloc<DefaultClause>, data.case_or_default_clause_base);
+            offsets
+        };
+        let offset = OFFSETS[self.data_tag() as usize];
+        if offset == 0 {
+            return None;
+        }
+        // SAFETY: the tag selects the concrete allocation and its embedded CaseOrDefaultClauseBase. Both
+        // allocation forms have the same data offset, and the arena keeps the field alive.
+        Some(unsafe { tsrs_core::ptr::arena_neighbor(self, offset as isize) })
+    }
+
     pub fn literal_like_data(&self) -> Option<&'static LiteralLikeNodeBase> {
-        const OFFSETS: [usize; 194] = {
-            let mut offsets = [0; 194];
+        const OFFSETS: [usize; 195] = {
+            let mut offsets = [0; 195];
             offsets[NodeDataTag::StringLiteral as usize] =
                 std::mem::offset_of!(NodeAlloc<StringLiteral>, data.literal_like_node_base);
             offsets[NodeDataTag::NumericLiteral as usize] =
@@ -8753,8 +8821,8 @@ impl Node {
     }
 
     pub fn template_literal_like_data(&self) -> Option<&'static TemplateLiteralLikeNodeBase> {
-        const OFFSETS: [usize; 194] = {
-            let mut offsets = [0; 194];
+        const OFFSETS: [usize; 195] = {
+            let mut offsets = [0; 195];
             offsets[NodeDataTag::NoSubstitutionTemplateLiteral as usize] = std::mem::offset_of!(
                 NodeAlloc<NoSubstitutionTemplateLiteral>,
                 data.template_literal_like_node_base
@@ -9292,39 +9360,48 @@ impl NodeFactory {
         node
     }
 
-    pub fn new_case_or_default_clause(
-        &self,
-        kind: Kind,
-        expression: Option<P<Node>>,
-        statements: P<NodeList>,
-    ) -> P<Node> {
-        assert!(
-            matches!(kind, Kind::CaseClause | Kind::DefaultClause),
-            "Invalid node kind for CaseOrDefaultClause"
-        );
+    pub fn new_case_clause(&self, expression: P<Node>, statements: P<NodeList>) -> P<Node> {
         self.new_node(
-            kind,
-            CaseOrDefaultClause {
+            Kind::CaseClause,
+            CaseClause {
+                case_or_default_clause_base: CaseOrDefaultClauseBase {
+                    statements,
+                    fallthrough_flow_node: OwnedCell::new(None),
+                },
                 expression,
-                statements,
-                fallthrough_flow_node: OwnedCell::new(None),
             },
         )
     }
 
-    pub fn update_case_or_default_clause(
+    pub fn update_case_clause(
         &self,
         node: P<Node>,
-        expression: Option<P<Node>>,
+        expression: P<Node>,
         statements: P<NodeList>,
     ) -> P<Node> {
-        let data = node.as_case_or_default_clause();
+        let data = node.as_case_clause();
         if expression != data.expression() || statements != data.statements() {
-            return update_node(
-                self.new_case_or_default_clause(node.kind(), expression, statements),
-                node,
-                &self.hooks,
-            );
+            return update_node(self.new_case_clause(expression, statements), node, &self.hooks);
+        }
+        node
+    }
+
+    pub fn new_default_clause(&self, statements: P<NodeList>) -> P<Node> {
+        self.new_node(
+            Kind::DefaultClause,
+            DefaultClause {
+                case_or_default_clause_base: CaseOrDefaultClauseBase {
+                    statements,
+                    fallthrough_flow_node: OwnedCell::new(None),
+                },
+            },
+        )
+    }
+
+    pub fn update_default_clause(&self, node: P<Node>, statements: P<NodeList>) -> P<Node> {
+        let data = node.as_default_clause();
+        if statements != data.statements() {
+            return update_node(self.new_default_clause(statements), node, &self.hooks);
         }
         node
     }
@@ -11404,6 +11481,10 @@ impl NodeFactory {
         equals_greater_than_token: Option<P<Node>>,
         body: Option<P<Node>>,
     ) -> P<Node> {
+        let equals_greater_than_token = Some(
+            equals_greater_than_token
+                .unwrap_or_else(|| self.new_token(Kind::EqualsGreaterThanToken)),
+        );
         self.new_node(
             Kind::ArrowFunction,
             ArrowFunction {
@@ -15000,28 +15081,45 @@ impl CaseBlock {
     }
 }
 
-impl CaseOrDefaultClause {
+impl CaseClause {
     fn for_each_child<V: FnMut(P<Node>) -> bool + ?Sized>(&self, v: &mut V) -> bool {
-        visit(v, self.expression()) || visit_node_list(v, Some(self.statements()))
+        v(self.expression()) || visit_node_list(v, Some(self.statements()))
     }
 }
 
-impl CaseOrDefaultClause {
+impl CaseClause {
     fn visit_each_child(&self, node: P<Node>, v: &mut NodeVisitor) -> P<Node> {
-        let expression_ = v.visit_node_hooked(self.expression());
+        let expression_ =
+            required_child(v.visit_node_hooked(Some(self.expression())), self.expression());
         let statements_ =
             required_child(v.visit_nodes_hooked(Some(self.statements())), self.statements());
-        v.factory.update_case_or_default_clause(node, expression_, statements_)
+        v.factory.update_case_clause(node, expression_, statements_)
     }
 }
 
-impl CaseOrDefaultClause {
+impl CaseClause {
     fn clone_node(&self, node: P<Node>, f: &NodeFactory) -> P<Node> {
-        clone_node(
-            f.new_case_or_default_clause(node.kind(), self.expression(), self.statements()),
-            node,
-            &f.hooks,
-        )
+        clone_node(f.new_case_clause(self.expression(), self.statements()), node, &f.hooks)
+    }
+}
+
+impl DefaultClause {
+    fn for_each_child<V: FnMut(P<Node>) -> bool + ?Sized>(&self, v: &mut V) -> bool {
+        visit_node_list(v, Some(self.statements()))
+    }
+}
+
+impl DefaultClause {
+    fn visit_each_child(&self, node: P<Node>, v: &mut NodeVisitor) -> P<Node> {
+        let statements_ =
+            required_child(v.visit_nodes_hooked(Some(self.statements())), self.statements());
+        v.factory.update_default_clause(node, statements_)
+    }
+}
+
+impl DefaultClause {
+    fn clone_node(&self, node: P<Node>, f: &NodeFactory) -> P<Node> {
+        clone_node(f.new_default_clause(self.statements()), node, &f.hooks)
     }
 }
 

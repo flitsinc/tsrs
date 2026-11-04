@@ -3178,7 +3178,7 @@ impl Checker {
             self.check_source_elements(clause.statements());
             if self.compiler_options.no_fallthrough_cases_in_switch.is_true()
                 && let Some(flow_node) =
-                    clause.as_case_or_default_clause().fallthrough_flow_node.get()
+                    clause.case_or_default_clause_data().unwrap().fallthrough_flow_node.get()
                 && self.is_reachable_flow_node(flow_node)
             {
                 self.error(Some(clause), &diagnostics::FALLTHROUGH_CASE_IN_SWITCH, &[]);

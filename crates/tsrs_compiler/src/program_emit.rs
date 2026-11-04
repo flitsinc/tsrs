@@ -3,7 +3,7 @@
 //
 // Threading (docs/EMIT.md section 10): Go queues one task per file on a work group; each task takes the file's
 // checker (`newEmitHost`) for the whole emit of that file. Here, with the compiler's own checker pool, the
-// transforms run per checker group on the checker threads (files in program order within a group), the way
+// transforms run per checker group on the checker threads (files in reverse program order within a group), the way
 // `get_declaration_diagnostics` does, and each transformed file is printed and written on the worker pool (Go prints
 // while it holds the checker; printing does not use it). Each file's result goes into a slot indexed by its position
 // in the emit list, and `combine_emit_results` runs in input order, which is Go's observable order. With an external
@@ -306,20 +306,26 @@ impl Program {
             Some(pool) if !self.single_threaded() => {
                 let pending = PendingPrints::default();
                 crate::program::worker_pool().in_place_scope(|scope| {
-                    pool.for_each_checker_group_do(&source_files, false, |c, index, file| {
-                        let e = transform(c, file);
-                        pending.acquire();
-                        let (print, pending) = (&print, &pending);
-                        scope.spawn(move |_| {
-                            print(e, index);
-                            pending.release();
-                        });
-                    });
+                    pool.for_each_checker_group_do_in_reverse(
+                        &source_files,
+                        false,
+                        |c, index, file| {
+                            let e = transform(c, file);
+                            pending.acquire();
+                            let (print, pending) = (&print, &pending);
+                            scope.spawn(move |_| {
+                                print(e, index);
+                                pending.release();
+                            });
+                        },
+                    );
                 });
             }
-            Some(pool) => pool.for_each_checker_group_do(&source_files, true, |c, index, file| {
-                print(transform(c, file), index);
-            }),
+            Some(pool) => {
+                pool.for_each_checker_group_do_in_reverse(&source_files, true, |c, index, file| {
+                    print(transform(c, file), index);
+                });
+            }
             None => {
                 for (index, &file) in source_files.iter().enumerate() {
                     let e = {

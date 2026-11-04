@@ -88,7 +88,6 @@ pub mod inference_types;
 pub mod jsx_types;
 pub mod links;
 pub mod mapper;
-pub mod merged_symbols;
 pub mod nodebuilder_types;
 pub mod printer_types;
 pub mod program;

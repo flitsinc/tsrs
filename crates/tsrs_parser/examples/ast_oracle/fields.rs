@@ -15,7 +15,10 @@ pub fn dump_fields(n: &Node, d: &mut Dumper) {
         NodeData::CaseBlock(x) => {
             d.field_list("Clauses", x.clauses());
         }
-        NodeData::CaseOrDefaultClause(x) => {
+        NodeData::CaseClause(x) => {
+            d.field_list("Statements", x.statements());
+        }
+        NodeData::DefaultClause(x) => {
             d.field_list("Statements", x.statements());
         }
         NodeData::Block(x) => {

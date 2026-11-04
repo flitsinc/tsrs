@@ -9,7 +9,7 @@ mod emitfileshandler;
 pub mod host;
 mod incremental;
 pub mod program;
-mod programtosnapshot;
+pub mod programtosnapshot;
 mod referencemap;
 pub mod snapshot;
 mod snapshottobuildinfo;

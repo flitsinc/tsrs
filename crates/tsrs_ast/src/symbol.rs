@@ -438,10 +438,24 @@ pub struct SymbolTable(FrozenCell<SymbolMap>);
 
 const SYMBOL_TABLE_LINEAR_MAX: usize = 16;
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 struct SymbolMap {
     entries: EntryVec,
     extra: ExtraSlot,
+}
+
+impl Clone for SymbolMap {
+    fn clone(&self) -> Self {
+        let mut copy = SymbolMap { entries: self.entries.clone(), extra: ExtraSlot::default() };
+        if copy.entries.len() > SYMBOL_TABLE_LINEAR_MAX {
+            copy.build_index();
+        } else {
+            for entry in &*copy.entries {
+                copy.extra.add_to_filter(hash_name(entry.key()));
+            }
+        }
+        copy
+    }
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -928,14 +942,16 @@ impl SymbolMap {
         }
     }
 
-    fn insert(&mut self, name: &'static str, symbol: P<Symbol>) {
+    fn set_or_add(&mut self, name: &'static str, symbol: P<Symbol>, replace: bool) -> bool {
         let table = std::ptr::from_ref(self) as usize;
         let hash = hash_name(name);
         if let Some(i) = if self.extra.may_contain(hash) { self.search(name, hash) } else { None } {
             // Go keeps the stored key; it is no longer the new symbol's name when that differs. `name` has the
             // stored key's text.
-            self.entries[i].set_symbol(name, symbol, table);
-            return;
+            if replace {
+                self.entries[i].set_symbol(name, symbol, table);
+            }
+            return replace;
         }
         let i = self.entries.len();
         if i == self.entries.capacity() && i >= 8 {
@@ -957,6 +973,7 @@ impl SymbolMap {
         } else if self.entries.len() > SYMBOL_TABLE_LINEAR_MAX {
             self.build_index();
         }
+        true
     }
 
     /// The index of a linear table that has grown past `SYMBOL_TABLE_LINEAR_MAX` entries.
@@ -1112,7 +1129,29 @@ impl SymbolTable {
 
     #[inline]
     pub fn set(&self, name: &'static str, symbol: P<Symbol>) {
-        self.0.borrow_mut().insert(name, symbol);
+        self.0.borrow_mut().set_or_add(name, symbol, true);
+    }
+
+    pub fn add_if_absent(&self, name: &'static str, symbol: P<Symbol>) -> bool {
+        self.0.borrow_mut().set_or_add(name, symbol, false)
+    }
+
+    pub fn find(&self, name: &str) -> Option<usize> {
+        self.0.borrow().position(name)
+    }
+
+    pub fn symbol_at(&self, index: usize) -> P<Symbol> {
+        self.0.borrow().entries[index].symbol()
+    }
+
+    pub fn clear(&self) {
+        let mut map = self.0.borrow_mut();
+        map.entries.len = 0;
+        if let Some(index) = map.extra.get_mut() {
+            index.clear();
+        } else {
+            map.extra = ExtraSlot::default();
+        }
     }
 
     pub fn delete(&self, name: &str) {

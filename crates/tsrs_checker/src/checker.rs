@@ -1225,7 +1225,7 @@ pub struct Checker {
     pub(crate) properties_types: FxHashMap<PropertiesTypesKey, P<Type>>,
     pub(crate) diagnostics: ast::DiagnosticsCollection,
     pub(crate) suggestion_diagnostics: ast::DiagnosticsCollection,
-    pub(crate) merged_symbols: crate::merged_symbols::MergedSymbols,
+    pub(crate) merged_symbols: SymbolArenaLinkStore<Cell<Option<P<Symbol>>>>,
     pub(crate) merged_exports_checked: Set<P<Symbol>>,
     pub(crate) factory: ast::NodeFactory,
     pub(crate) node_links: LinkStore<Node, NodeLinks>,
@@ -1262,6 +1262,8 @@ pub struct Checker {
     pub(crate) member_layout_cache:
         crate::basedmap::Based<FxHashMap<CacheHashKey, P<MemberLayout>>, CacheHashKey>,
     pub(crate) member_layout_count: u32,
+    pub(crate) layout_members: Option<P<SymbolTable>>,
+    pub(crate) layout_base_indices: Vec<Option<std::num::NonZeroU32>>,
     /// Per generic target, what `prepare_lazy_members` learned about its declared members for good
     /// (`lazy_unaffected_members`).
     pub(crate) lazy_unaffected: FxHashMap<P<Type>, crate::checker_09::LazyUnaffected>,
@@ -1745,7 +1747,7 @@ pub fn new_checker(program: &'static dyn Program) -> Box<Checker> {
         properties_types: FxHashMap::default(),
         diagnostics: ast::DiagnosticsCollection::default(),
         suggestion_diagnostics: ast::DiagnosticsCollection::default(),
-        merged_symbols: crate::merged_symbols::MergedSymbols::default(),
+        merged_symbols: SymbolArenaLinkStore::default(),
         merged_exports_checked: Set::new(),
         factory: ast::NodeFactory::default(),
         node_links: LinkStore::default(),
@@ -1780,6 +1782,8 @@ pub fn new_checker(program: &'static dyn Program) -> Box<Checker> {
         lazy_member_tables: crate::basedmap::Based::default(),
         member_layout_cache: crate::basedmap::Based::default(),
         member_layout_count: 0,
+        layout_members: None,
+        layout_base_indices: Vec::new(),
         lazy_unaffected: FxHashMap::default(),
         object_types_without_abstract_construct_signatures: FxHashMap::default(),
         structured_type_base_constraints: FxHashMap::default(),
@@ -2290,7 +2294,7 @@ impl Checker {
             properties_types: base.properties_types.clone(),
             diagnostics: base.diagnostics.clone(),
             suggestion_diagnostics: base.suggestion_diagnostics.clone(),
-            merged_symbols: base.merged_symbols.clone(),
+            merged_symbols: base.merged_symbols.fork(),
             merged_exports_checked: base.merged_exports_checked.clone(),
             factory: ast::NodeFactory::default(),
             node_links: base.node_links.fork(),
@@ -2325,6 +2329,8 @@ impl Checker {
             lazy_member_tables: crate::basedmap::Based::over(&base.lazy_member_tables),
             member_layout_cache: crate::basedmap::Based::over(&base.member_layout_cache),
             member_layout_count: base.member_layout_count,
+            layout_members: None,
+            layout_base_indices: Vec::new(),
             lazy_unaffected: FxHashMap::default(),
             object_types_without_abstract_construct_signatures: base
                 .object_types_without_abstract_construct_signatures

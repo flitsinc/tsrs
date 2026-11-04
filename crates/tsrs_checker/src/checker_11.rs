@@ -1168,61 +1168,18 @@ impl Checker {
     }
 
     // checker.go:22445
-    pub(crate) fn get_named_members(
-        &mut self,
-        members: Option<P<SymbolTable>>,
-        container: Option<P<Symbol>>,
-    ) -> Vec<P<Symbol>> {
+    pub(crate) fn get_named_members(&mut self, members: Option<P<SymbolTable>>) -> Vec<P<Symbol>> {
         let Some(members) = members.filter(|m| !m.is_empty()) else {
             return Vec::new();
         };
-        // For classes and interfaces, we store explicitly declared members ahead of inherited members. This ensures we process
-        // explicitly declared members first in type relations, which is beneficial because explicitly declared members are more
-        // likely to contain discriminating differences. See for example https://github.com/microsoft/TypeScript/tsc/issues/1968.
         let n = members.len();
         let mut result: Vec<P<Symbol>> = Vec::with_capacity(n);
-        let mut contained_count = 0;
-        let is_class_or_interface_container = container
-            .is_some_and(|c| c.flags().intersects(SymbolFlags::Class | SymbolFlags::Interface));
-        if is_class_or_interface_container {
-            let container = container.unwrap();
-            result.extend((0..n).filter_map(|i| {
-                let (id, symbol) = members.entry(i);
-                if self.is_named_member(symbol, id)
-                    && Self::is_declaration_contained_by(symbol, container)
-                {
-                    Some(symbol)
-                } else {
-                    None
-                }
-            }));
-            contained_count = result.len();
-        }
         result.extend((0..n).filter_map(|i| {
             let (id, symbol) = members.entry(i);
-            if self.is_named_member(symbol, id)
-                && (!is_class_or_interface_container
-                    || !Self::is_declaration_contained_by(symbol, container.unwrap()))
-            {
-                Some(symbol)
-            } else {
-                None
-            }
+            if self.is_named_member(symbol, id) { Some(symbol) } else { None }
         }));
-        let (contained, rest) = result.split_at_mut(contained_count);
-        self.sort_symbols(contained);
-        self.sort_symbols(rest);
+        self.sort_symbols(&mut result);
         result
-    }
-
-    // checker.go:22472
-    pub(crate) fn is_declaration_contained_by(symbol: P<Symbol>, container: P<Symbol>) -> bool {
-        if let Some(declaration) = symbol.value_declaration()
-            && container.declarations().iter().any(|d| declaration.loc().contained_by(d.loc()))
-        {
-            return true;
-        }
-        false
     }
 
     // checker.go:22483

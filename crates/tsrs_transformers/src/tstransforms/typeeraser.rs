@@ -166,7 +166,13 @@ impl TypeEraserTransformer {
             Kind::PropertyDeclaration => {
                 if self.compiler_options.experimental_decorators.is_true() && ast::has_syntactic_modifier(node, ModifierFlags::Ambient | ModifierFlags::Abstract) && ast::has_decorators(node) {
                     // declare/abstract props with decorators must be preserved until the decorator transform can process them and remove them
-                    return Some(f.update_property_declaration(node, v.visit_modifiers(node.modifiers()), v.visit_node(node.name()).unwrap(), None, None, v.visit_node(node.initializer())));
+                    let updated = f.update_property_declaration(node, v.visit_modifiers(node.modifiers()), v.visit_node(node.name()).unwrap(), None, None, v.visit_node(node.initializer()));
+                    if updated != node && !ast::has_syntactic_modifier(node, ModifierFlags::Ambient) {
+                        // `abstract` is elided by VisitModifiers; mark the rebuilt node ambient so the decorator transform
+                        // erases the field and treats its computed name like a `declare` property's.
+                        updated.flags.set(updated.flags.get() | NodeFlags::Ambient);
+                    }
+                    return Some(updated);
                 }
                 if ast::has_syntactic_modifier(node, ModifierFlags::Ambient | ModifierFlags::Abstract) {
                     // TypeScript `declare` fields are elided
@@ -449,10 +455,15 @@ impl TypeEraserTransformer {
             }
 
             Kind::EnumDeclaration => {
-                if ast::is_enum_const(node) {
+                if !ast::is_enum_const(node) {
+                    return v.visit_each_child(Some(node));
+                }
+                if !self.compiler_options.should_preserve_const_enums() {
                     return Some(node);
                 }
-                v.visit_each_child(Some(node))
+                // Preserve the const modifier for the runtime syntax transform.
+                let n = node.as_enum_declaration();
+                Some(f.update_enum_declaration(node, node.modifiers(), n.name, v.visit_nodes(Some(n.members)).unwrap()))
             }
 
             _ => v.visit_each_child(Some(node)),

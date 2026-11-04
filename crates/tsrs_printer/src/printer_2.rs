@@ -199,8 +199,9 @@ impl Printer {
         let n = node.as_new_expression();
         self.emit_token(Kind::NewKeyword, node.pos(), WriteKind::Keyword, node);
         self.write_space();
-        if skip_partially_emitted_expressions(n.expression()).kind() == Kind::CallExpression {
-            // Parenthesize `C()` inside of a NewExpression so it is treated as `new (C())` and not `new C()`
+        if has_unparenthesized_call_at_start_of_member_chain(n.expression()) {
+            // Parenthesize `C()` or `C().D` inside of a NewExpression so it is treated as `new (C())` or `new (C().D)`
+            // and not `new C()` or `new C().D`
             self.emit_expression(n.expression(), OperatorPrecedence::Parentheses);
         } else {
             self.emit_expression(n.expression(), OperatorPrecedence::Member);
@@ -2318,7 +2319,7 @@ impl Printer {
 
 impl Printer {
     fn emit_case_or_default_clause_statements(&mut self, node: P<Node>, colon_pos: TextPos) {
-        let statements = node.as_case_or_default_clause().statements();
+        let statements = node.statement_list().unwrap();
         let emit_as_single_statement = statements.nodes().len() == 1
             // treat synthesized nodes as located on the same line for emit purposes
             && (self.current_source_file().is_none()
@@ -2342,7 +2343,7 @@ impl Printer {
 
     pub(crate) fn emit_case_clause(&mut self, node: P<Node>) {
         let state = self.enter_node(node);
-        let expression = node.as_case_or_default_clause().expression().unwrap();
+        let expression = node.as_case_clause().expression();
         self.emit_token(Kind::CaseKeyword, node.pos(), WriteKind::Keyword, node);
         self.write_space();
         self.emit_expression(expression, OperatorPrecedence::LOWEST);

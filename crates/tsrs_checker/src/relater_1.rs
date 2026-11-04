@@ -2228,8 +2228,8 @@ impl Checker {
     // notes/mem-lazy.md L10: the properties getPropertiesOfType(t) would return, in the same order, but with declared
     // members in place of the instantiations a lazy member table has not created; None when t has no such table.
     // Mirrors resolveLazyMembers (declared named members, then addInheritedMembers over each base type's
-    // properties) and getNamedMembers (members declared in the class or interface first, each part sorted with
-    // compareSymbols). A declared member has its instantiation's name, flags and declarations, and names are unique
+    // properties) and getNamedMembers (all members sorted with compareSymbols). A declared member has its
+    // instantiation's name, flags and declarations, and names are unique
     // in a member table, so the order is the same. Kept in the table: bases share it instead of being walked again.
     fn get_lazy_properties_in_order(&mut self, t: P<Type>) -> Option<Vec<P<Symbol>>> {
         let reduced = self.get_reduced_apparent_type(t);
@@ -2265,25 +2265,9 @@ impl Checker {
                 }
             }
         }
-        let container = reduced.symbol();
-        let is_class_or_interface_container = container
-            .is_some_and(|c| c.flags().intersects(SymbolFlags::Class | SymbolFlags::Interface));
-        let mut contained: Vec<P<Symbol>> = Vec::new();
-        let mut rest: Vec<P<Symbol>> = Vec::new();
-        for p in members {
-            if is_class_or_interface_container
-                && Self::is_declaration_contained_by(p, container.unwrap())
-            {
-                contained.push(p);
-            } else {
-                rest.push(p);
-            }
-        }
-        self.sort_symbols(&mut contained);
-        self.sort_symbols(&mut rest);
-        contained.extend(rest);
-        let _ = lm.ordered_properties.set(ThinSlice::new(alloc_slice(&contained)));
-        Some(contained)
+        self.sort_symbols(&mut members);
+        let _ = lm.ordered_properties.set(ThinSlice::new(alloc_slice(&members)));
+        Some(members)
     }
 }
 

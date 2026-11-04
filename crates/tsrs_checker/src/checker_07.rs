@@ -2551,7 +2551,9 @@ impl Checker {
 
     // checker.go:14584
     pub fn get_merged_symbol(&mut self, symbol: P<Symbol>) -> P<Symbol> {
-        if let Some(&merged) = self.merged_symbols.get(&symbol) {
+        if let Some(merged) =
+            self.merged_symbols.try_get(symbol).and_then(|links| links.get().get())
+        {
             return merged;
         }
         symbol
@@ -2568,7 +2570,7 @@ impl Checker {
 
     // checker.go:14601
     fn record_merged_symbol(&mut self, target: P<Symbol>, source: P<Symbol>) {
-        self.merged_symbols.insert(source, target);
+        self.merged_symbols.get(source).set(Some(target));
     }
 
     // checker.go:14605

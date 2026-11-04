@@ -264,6 +264,88 @@ fn edits_invalidate_the_same_files_with_computed_signatures() {
 }
 
 #[test]
+fn cached_changed_signature_still_invalidates_global_consumers() {
+    let ctx = Context::default();
+    let config = r#"{"compilerOptions":{"noLib":true,"types":[],"strict":true,"noEmit":true,"incremental":true}}"#;
+    let mut texts = BTreeMap::from([
+        ("/src/a.ts", "export const a = 1;".to_string()),
+        ("/src/b.ts", "import { a } from './a'; export const b = a; declare global { interface Window { fromB: typeof a; } var window: Window; }".to_string()),
+        ("/src/c.ts", "export const c: number = window.fromB;".to_string()),
+        ("/src/d.ts", "import { b } from './b'; export const d = 2;".to_string()),
+    ]);
+    let files = files_of(config, &texts);
+    let compiler = compiler_program(&files);
+    let mut program = Box::leak(Box::new(tsrs_incremental::new_program(
+        compiler,
+        None,
+        tsrs_incremental::create_host(compiler_host(&files)),
+        None,
+        false,
+    )))
+    .get();
+    assert_eq!(incremental_diagnostics(&ctx, program), [] as [String; 0]);
+    for (a, edit_b) in
+        [("export const a = 1; // edit", false), ("export const a = 'changed';", true)]
+    {
+        texts.insert("/src/a.ts", a.to_string());
+        if edit_b {
+            texts.get_mut("/src/b.ts").unwrap().push_str("\n// edit\n");
+        }
+        let files = files_of(config, &texts);
+        program = Box::leak(Box::new(tsrs_incremental::new_program(
+            compiler_program(&files),
+            Some(P::from_static(program)),
+            tsrs_incremental::create_host(compiler_host(&files)),
+            None,
+            false,
+        )))
+        .get();
+        let expected = fresh_diagnostics(&ctx, compiler_program(&files));
+        assert_eq!(incremental_diagnostics(&ctx, program), expected);
+        if edit_b {
+            assert!(expected.iter().any(|d| d.contains(" TS2322 ")));
+        }
+        program.compute_placeholder_signatures(&ctx, 2);
+    }
+}
+
+#[test]
+fn changed_default_library_invalidates_unchanged_consumers() {
+    const LIB_PATH: &str = "/node_modules/@typescript/lib-dom/index.d.ts";
+    let ctx = Context::default();
+    let config = r#"{"compilerOptions":{"types":[],"strict":true,"noEmit":true,"incremental":true,"lib":["dom"],"libReplacement":true}}"#;
+    let mut texts = BTreeMap::from([
+        (LIB_PATH, "interface DOMInterface { value: string; }".to_string()),
+        ("/src/a.ts", "export const value: string = ({} as DOMInterface).value;".to_string()),
+    ]);
+    let before = files_of(config, &texts);
+    let compiler = compiler_program(&before);
+    assert!(compiler.is_source_file_default_library(&Path::from(LIB_PATH)));
+    let old = tsrs_incremental::new_program(
+        compiler,
+        None,
+        tsrs_incremental::create_host(compiler_host(&before)),
+        None,
+        false,
+    );
+    assert_eq!(incremental_diagnostics(&ctx, old.get()), [] as [String; 0]);
+    texts.insert(LIB_PATH, "interface DOMInterface { value: number; }".to_string());
+    let after = files_of(config, &texts);
+    let compiler = compiler_program(&after);
+    assert!(compiler.is_source_file_default_library(&Path::from(LIB_PATH)));
+    let current = tsrs_incremental::new_program(
+        compiler,
+        Some(old),
+        tsrs_incremental::create_host(compiler_host(&after)),
+        None,
+        false,
+    );
+    let diagnostics = incremental_diagnostics(&ctx, current.get());
+    assert_eq!(diagnostics, fresh_diagnostics(&ctx, compiler_program(&after)));
+    assert!(diagnostics.iter().any(|d| d.contains("/src/a.ts:") && d.contains(" TS2322 ")));
+}
+
+#[test]
 fn computed_signatures_replace_only_stand_ins() {
     let ctx = Context::default();
     let texts: BTreeMap<&'static str, String> =

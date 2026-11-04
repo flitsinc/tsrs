@@ -6,6 +6,18 @@ use tsrs_incremental::snapshot::FileInfo;
 
 use tsrs_incremental::buildinfo::*;
 
+#[test]
+fn cached_options_retain_enum_lists_paths_and_inherited_base() {
+    let info = BuildInfo::unmarshal(
+        r#"{"options":{"target":7,"types":["node"],"paths":{"x":["./x"]},"pathsBasePath":"../shared"}}"#,
+    ).unwrap();
+    let options = info.get_compiler_options("/out/cache");
+    assert_eq!(options.target, tsrs_core::ScriptTarget::ES2020);
+    assert_eq!(options.types, Some(vec!["node".to_string()]));
+    assert_eq!(options.paths.as_ref().unwrap().get("x"), Some(&Some(vec!["./x".to_string()])));
+    assert_eq!(options.paths_base_path, "/out/shared");
+}
+
 // `marshal` streams what `marshal_json` builds; a field written in the wrong place, or omitted or kept against
 // `marshal_json`'s rules, would change the tsbuildinfo bytes.
 #[test]

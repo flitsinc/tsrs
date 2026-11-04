@@ -87,6 +87,7 @@ Seeded fuzz and mutation generators use a deterministic JavaScript PRNG, so a se
 | `vp run gen:codec-probe` | `bash crates/tsrs_api_codec/gen/goprobe.sh` |
 | `vp run gen:api-probe` | `bash crates/tsrs_api/src/checker/testdata/go_probe/regen.sh` |
 | `vp run gen:diagnostics` | `node tools/gen-diagnostics/gen.mjs` |
+| Included by `vp run gen` | `node tools/gen-diagnostics/gen-locales.mjs` (copies the pinned upstream locale catalogs and archives) |
 | `vp run gen:libs` | `node tools/gen-libs/gen.mjs` |
 | `vp run gen:lsproto` | `node tools/gen-lsproto/generate.mts` |
 | `vp run gen:lsproto-model` | `node tools/gen-lsproto/fetchModel.mts` |

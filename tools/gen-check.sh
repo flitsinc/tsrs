@@ -19,6 +19,7 @@ generators=(
   "node crates/tsrs_api_codec/gen/gen-codec.ts"
   "cargo run --quiet --locked -p tsrs_generate_stringutil -- --write"
   "node tools/gen-diagnostics/gen.mjs"
+  "node tools/gen-diagnostics/gen-locales.mjs"
   "node tools/gen-libs/gen.mjs"
   "node tools/gen-lsproto/generate.mts"
 )

@@ -1237,9 +1237,9 @@ impl BuildTask {
                 if seen_roots.has(&input_path) || resolved_roots.has(&input_path) {
                     continue;
                 }
-                if is_content_mapper_supplemental_build_info_path(
+                if is_content_mapper_virtual_file_path(
                     &input_path,
-                    get_build_info_root_info_reader().roots(),
+                    get_build_info_root_info_reader(),
                 ) && !tsrs_compiler::CompilerHost::fs(host).file_exists(&input_file)
                 {
                     continue;
@@ -1764,29 +1764,25 @@ impl BuildTask {
 }
 
 // buildtask.go:621
-pub fn is_content_mapper_supplemental_build_info_path<'a>(
+pub fn is_content_mapper_virtual_file_path(
     input_path: &Path,
-    roots: impl IntoIterator<Item = &'a Path>,
+    roots: &BuildInfoRootInfoReader,
 ) -> bool {
-    if roots.into_iter().any(|root| {
-        let Some(suffix) =
-            input_path.as_str().strip_prefix(root.as_str()).and_then(|rest| rest.strip_prefix('.'))
-        else {
-            return false;
-        };
-        let Some((index, extension)) = suffix.split_once('.') else {
-            return false;
-        };
-        if extension.is_empty() {
-            return false;
-        }
-        // Go `strconv.Atoi`: an optional sign and decimal digits.
-        let is_int = index.parse::<i64>().is_ok();
-        is_int && tsrs_contentmapper::is_supported_virtual_extension(&format!(".{extension}"))
-    }) {
-        return true;
+    let path = input_path.as_str();
+    let Some(extension_start) = path.rfind('.') else {
+        return false;
+    };
+    if !tsrs_contentmapper::is_supported_virtual_extension(&path[extension_start..]) {
+        return false;
     }
-    false
+    let Some((root_name, index)) = path[..extension_start].rsplit_once('.') else {
+        return false;
+    };
+    if !roots.has_root(root_name) {
+        return false;
+    }
+    // Go `strconv.Atoi`: an optional sign and decimal digits.
+    index.parse::<i64>().is_ok()
 }
 
 // Whether a changed file that is not a file of a program could change its module resolution: a file module

@@ -1649,10 +1649,12 @@ fn parse_config(
     let resolved_path =
         tspath::to_path(config_file_name, &base_path, host.fs().use_case_sensitive_file_names());
     let mut errors: Vec<P<Diagnostic>> = Vec::new();
-    if resolution_stack.contains(&resolved_path) {
+    if let Some(index) = resolution_stack.iter().position(|path| *path == resolved_path) {
+        let mut cycle = resolution_stack[index..].iter().map(Path::as_str).collect::<Vec<_>>();
+        cycle.push(resolved_path.as_str());
         errors.push(new_compiler_diagnostic(
             &diagnostics::CIRCULARITY_DETECTED_WHILE_RESOLVING_CONFIGURATION_COLON_0,
-            &[],
+            &[&cycle.join(" -> ")],
         ));
         let result = if json.as_ref().map_or(0, OrderedMap::len) == 0 {
             ParsedTsconfig {

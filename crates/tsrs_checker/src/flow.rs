@@ -2878,12 +2878,19 @@ impl Checker {
                 if ast::is_this_in_type_query(source) {
                     return target.kind() == Kind::ThisKeyword;
                 }
-                if ast::is_identifier(target)
-                    && self.get_resolved_symbol(source) == self.get_resolved_symbol(target)
-                {
-                    return true;
+                if ast::is_identifier(target) {
+                    return self.get_resolved_symbol(source) == self.get_resolved_symbol(target);
                 }
                 if ast::is_variable_declaration(target) || ast::is_binding_element(target) {
+                    // A declaration's symbol is named by its identifier, so a reference with a
+                    // different name cannot resolve to it. Checking names first avoids loading
+                    // the symbols of every unrelated declaration seen while walking flow nodes.
+                    if let Some(name) = target.name()
+                        && ast::is_identifier(name)
+                        && name.text() != source.text()
+                    {
+                        return false;
+                    }
                     let source_symbol = self.get_resolved_symbol(source);
                     let export_symbol = self
                         .get_export_symbol_of_value_symbol_if_exported(Some(source_symbol))
@@ -2902,8 +2909,11 @@ impl Checker {
                 return self.is_matching_reference(source.expression().unwrap(), target);
             }
             Kind::PropertyAccessExpression | Kind::ElementAccessExpression => {
+                if !ast::is_access_expression(target) {
+                    return false;
+                }
                 let (source_property_name, ok) = self.get_accessed_property_name(source);
-                if ok && ast::is_access_expression(target) {
+                if ok {
                     let (target_property_name, ok) = self.get_accessed_property_name(target);
                     if ok {
                         return target_property_name == source_property_name

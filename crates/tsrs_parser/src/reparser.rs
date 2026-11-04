@@ -16,6 +16,8 @@ impl Parser {
 
     fn finish_mutated_node(&mut self, node: P<Node>) {
         self.override_parent_in_immediate_children(node);
+        // Wrapping an assignment's right side can make it a CommonJS export assignment.
+        self.check_common_js_module_indicator(node);
     }
 
     // The file's reparse cloner, built on first use.

@@ -181,9 +181,8 @@ impl AffectedFilesHandler<'_> {
         use_file_version_as_signature: bool,
         computed: Option<String>,
     ) -> bool {
-        // If we have cached the result for this file, that means hence forth we should assume file shape is uptodate
         if self.updated_signatures.borrow().contains_key(file.path()) {
-            return false;
+            return self.is_changed_signature(file.path());
         }
         self.updated_signatures.borrow_mut().insert(
             file.path().clone(),

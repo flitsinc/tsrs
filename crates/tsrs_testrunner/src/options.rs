@@ -151,6 +151,7 @@ pub fn tsoptions_option_table() -> OptionTable {
         "resolvepackagejsonexports",
         "resolvepackagejsonimports",
         "rewriterelativeimportextensions",
+        "disabledynamicimportextensionrewriting",
         "singlethreaded",
         "skipdefaultlibcheck",
         "skiplibcheck",

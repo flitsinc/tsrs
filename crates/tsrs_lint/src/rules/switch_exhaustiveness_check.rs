@@ -122,10 +122,7 @@ fn get_switch_metadata(
         if case.kind() == Kind::DefaultClause {
             continue;
         }
-        let case_type = get_constrained_type_at_location(
-            checker,
-            case.as_case_or_default_clause().expression.unwrap(),
-        );
+        let case_type = get_constrained_type_at_location(checker, case.as_case_clause().expression);
         case_type_set.insert(case_type);
         if case_type.flags().intersects(TypeFlags::Undefined) {
             has_undefined_case = true;

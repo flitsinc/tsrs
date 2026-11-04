@@ -53,6 +53,37 @@ const FILES: [(&str, &str); 8] = [
     ),
 ];
 
+#[test]
+fn shared_global_file_order_changes() {
+    use tsrs_incremental::programtosnapshot::global_file_order_changed;
+    use tsrs_incremental::snapshot::{FileInfo, Snapshot};
+    for (name, old, new, changed) in [
+        ("unchanged", vec!["/a", "/module", "/b"], vec!["/a", "/module", "/b"], false),
+        ("global reorder", vec!["/a", "/module", "/b"], vec!["/b", "/module", "/a"], true),
+        ("module reorder", vec!["/a", "/module", "/b"], vec!["/module", "/a", "/b"], false),
+        ("global added", vec!["/a", "/b"], vec!["/a", "/new", "/b"], false),
+        ("global removed", vec!["/a", "/removed", "/b"], vec!["/a", "/b"], false),
+        ("reorder with removal", vec!["/a", "/removed", "/b"], vec!["/b", "/a"], true),
+    ] {
+        let mut before = Snapshot::default();
+        let mut after = Snapshot::default();
+        before.file_order = old.into_iter().map(Path::from).collect();
+        after.file_order = new.into_iter().map(Path::from).collect();
+        for snapshot in [&before, &after] {
+            for path in &snapshot.file_order {
+                snapshot.file_infos.store(
+                    path.clone(),
+                    FileInfo {
+                        affects_global_scope: path.as_str() != "/module",
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        assert_eq!(global_file_order_changed(&before, &after), changed, "{name}");
+    }
+}
+
 fn with(changes: &[(&'static str, Option<&'static str>)]) -> Vec<(&'static str, &'static str)> {
     let mut files: Vec<(&str, &str)> = FILES.to_vec();
     for &(name, text) in changes {
