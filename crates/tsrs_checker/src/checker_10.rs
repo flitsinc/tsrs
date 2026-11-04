@@ -1,5 +1,5 @@
 use crate::*;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::rc::Rc;
 use tsrs_ast as ast;
 use tsrs_ast::*;
@@ -473,21 +473,28 @@ impl Checker {
     // TODO: GH#18217 If `checkBase` is undefined, we should not call this because this will always return false.
     // checker.go:19892
     pub(crate) fn has_base_type(&mut self, t: P<Type>, check_base: Option<P<Type>>) -> bool {
-        has_base_type_check(self, t, check_base)
+        has_base_type_check(self, t, check_base, &mut FxHashSet::default())
     }
 }
 
-fn has_base_type_check(c: &mut Checker, t: P<Type>, check_base: Option<P<Type>>) -> bool {
+fn has_base_type_check(
+    c: &mut Checker,
+    t: P<Type>,
+    check_base: Option<P<Type>>,
+    visited: &mut FxHashSet<P<Type>>,
+) -> bool {
     if t.object_flags().intersects(ObjectFlags::ClassOrInterface | ObjectFlags::Reference) {
         let target = get_target_type(t);
         if target == check_base {
             return true;
         }
         let base_types = c.get_base_types(target.unwrap());
-        return base_types.iter().any(|b| has_base_type_check(c, *b, check_base));
+        return (base_types.len() < 2 || visited.insert(target.unwrap()))
+            && base_types.iter().any(|b| has_base_type_check(c, *b, check_base, visited));
     }
     if t.flags().intersects(TypeFlags::Intersection) {
-        return t.types().iter().any(|t| has_base_type_check(c, *t, check_base));
+        return visited.insert(t)
+            && t.types().iter().any(|t| has_base_type_check(c, *t, check_base, visited));
     }
     false
 }
