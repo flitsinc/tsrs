@@ -2200,8 +2200,7 @@ impl Parser {
         self.parse_expected(Kind::ColonToken);
         let statements =
             self.parse_list(ParsingContext::SwitchClauseStatements, Parser::parse_statement);
-        let result =
-            self.factory.new_case_or_default_clause(Kind::CaseClause, Some(expression), statements);
+        let result = self.factory.new_case_clause(expression, statements);
         let result = self.finish_node(result, pos);
         self.with_jsdoc(result, jsdoc);
         result
@@ -2214,11 +2213,7 @@ impl Parser {
         self.parse_expected(Kind::ColonToken);
         let statements =
             self.parse_list(ParsingContext::SwitchClauseStatements, Parser::parse_statement);
-        let result = self.factory.new_case_or_default_clause(
-            Kind::DefaultClause,
-            None, /*expression*/
-            statements,
-        );
+        let result = self.factory.new_default_clause(statements);
         let result = self.finish_node(result, pos);
         self.with_jsdoc(result, jsdoc);
         result

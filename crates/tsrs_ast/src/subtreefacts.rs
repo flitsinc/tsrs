@@ -725,9 +725,12 @@ impl Node {
             NodeData::CaseBlock(d) => {
                 propagate_node_list_subtree_facts(d.clauses(), propagate_subtree_facts)
             }
-            NodeData::CaseOrDefaultClause(d) => {
-                propagate_subtree_facts(d.expression())
+            NodeData::CaseClause(d) => {
+                prop(d.expression())
                     | propagate_node_list_subtree_facts(d.statements(), propagate_subtree_facts)
+            }
+            NodeData::DefaultClause(d) => {
+                propagate_node_list_subtree_facts(d.statements(), propagate_subtree_facts)
             }
             NodeData::ThrowStatement(d) => prop(d.expression()),
             NodeData::TryStatement(d) => {

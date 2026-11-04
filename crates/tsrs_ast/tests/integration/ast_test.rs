@@ -93,9 +93,8 @@ fn factory_kind_parameters_reject_noncanonical_kinds() {
     for kind in [Kind::ForInStatement, Kind::ForOfStatement] {
         f.new_for_in_or_of_statement(kind, None, leaf, leaf, leaf).as_for_in_or_of_statement();
     }
-    for kind in [Kind::CaseClause, Kind::DefaultClause] {
-        f.new_case_or_default_clause(kind, None, list).as_case_or_default_clause();
-    }
+    f.new_case_clause(leaf, list).as_case_clause();
+    f.new_default_clause(list).as_default_clause();
     for kind in [Kind::ArrayBindingPattern, Kind::ObjectBindingPattern] {
         f.new_binding_pattern(kind, list).as_binding_pattern();
     }
@@ -136,9 +135,6 @@ fn factory_kind_parameters_reject_noncanonical_kinds() {
     let before_invalid = f.node_count();
     rejects(&|| {
         f.new_for_in_or_of_statement(Kind::FunctionDeclaration, None, leaf, leaf, leaf);
-    });
-    rejects(&|| {
-        f.new_case_or_default_clause(Kind::FunctionDeclaration, None, list);
     });
     rejects(&|| {
         f.new_binding_pattern(Kind::FunctionDeclaration, list);

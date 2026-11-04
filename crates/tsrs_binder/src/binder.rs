@@ -3224,18 +3224,21 @@ impl Binder {
             if !self.current_flow().flags.get().intersects(FlowFlags::Unreachable)
                 && i != clauses.len() - 1
             {
-                clause.as_case_or_default_clause().set_fallthrough_flow_node(self.current_flow);
+                clause
+                    .case_or_default_clause_data()
+                    .unwrap()
+                    .set_fallthrough_flow_node(self.current_flow);
             }
             i += 1;
         }
     }
 
     fn bind_case_or_default_clause(&mut self, node: P<Node>) {
-        let clause = node.as_case_or_default_clause();
-        if let Some(expression) = clause.expression() {
+        let clause = node.case_or_default_clause_data().unwrap();
+        if node.kind() == Kind::CaseClause {
             let save_current_flow = self.current_flow;
             self.current_flow = self.pre_switch_case_flow;
-            self.bind(expression);
+            self.bind(node.expression().unwrap());
             self.current_flow = save_current_flow;
         }
         self.bind_each(clause.statements().nodes());
