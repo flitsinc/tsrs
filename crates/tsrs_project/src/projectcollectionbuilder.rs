@@ -396,6 +396,19 @@ impl ProjectCollectionBuilder {
             }
         }
 
+        // Projects that are still the default for API-opened files must be retained.
+        #[expect(
+            clippy::iter_over_hash_type,
+            reason = "each lookup removes only its own project key; Go ranges the map too"
+        )]
+        for (path, file) in &self.api_state.borrow().open_files {
+            if let Some(entry) = self.find_default_configured_project(&file.file_name, path)
+                && let Some(projects_to_close) = &mut projects_to_close
+            {
+                projects_to_close.remove(&entry.value().unwrap().config_file_path);
+            }
+        }
+
         if let Some(projects_to_close) = &projects_to_close {
             #[expect(
                 clippy::iter_over_hash_type,
