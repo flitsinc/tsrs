@@ -1404,19 +1404,6 @@ impl Drop for RegionInner {
                 retired::retire(start, size);
             }
         }
-        #[cfg(all(compressed_ptrs, unix))]
-        if !retire {
-            for &(start, size) in &chunks {
-                // SAFETY: every value in this region has been dropped and its slab references remain held.
-                // Reclaim rounds inward, so adjacent live carves and future carves of the current slab are safe.
-                unsafe {
-                    crate::reserve::reclaim(
-                        std::ptr::with_exposed_provenance_mut::<u8>(start),
-                        size,
-                    );
-                }
-            }
-        }
         drop(chunks);
         for &slab in arena.slabs.borrow().iter() {
             slab_release_ex(slab, retire);

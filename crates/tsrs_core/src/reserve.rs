@@ -286,45 +286,6 @@ pub(crate) unsafe fn discard(p: *mut u8, len: usize) {
     decommit(q, end - start);
 }
 
-/// Returns whole pages inside a dead carve to the system while keeping them writable for slab reuse.
-/// Unlike `discard`, this does not retire the addresses. Partial boundary pages may contain live neighbours.
-///
-/// # Safety
-/// The range belongs to a reservation chunk and nothing may use its contents until the slab is reused.
-#[cfg(unix)]
-pub(crate) unsafe fn reclaim(p: *mut u8, len: usize) {
-    let page = page_size();
-    let start = p.addr().next_multiple_of(page);
-    let end = (p.addr() + len) & !(page - 1);
-    if end <= start {
-        return;
-    }
-    let q = p.with_addr(start);
-    #[cfg(target_os = "linux")]
-    // SAFETY: whole pages wholly inside the dead carve. MADV_DONTNEED preserves write permissions.
-    unsafe {
-        libc::madvise(q.cast(), end - start, libc::MADV_DONTNEED)
-    };
-    #[cfg(not(target_os = "linux"))]
-    {
-        // SAFETY: replace only whole dead pages, preserving their reservation and write permissions. On macOS
-        // MADV_FREE leaves pages in the physical footprint until pressure; a fresh mapping releases them now.
-        let mapped = unsafe {
-            libc::mmap(
-                q.cast(),
-                end - start,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_PRIVATE | libc::MAP_ANON | libc::MAP_NORESERVE | libc::MAP_FIXED,
-                -1,
-                0,
-            )
-        };
-        if mapped == libc::MAP_FAILED {
-            fail("could not reclaim arena pages");
-        }
-    }
-}
-
 /// Bytes of the reservation handed out as chunks and not released.
 pub(crate) fn reserved_in_use() -> usize {
     CHUNKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).live
