@@ -8,6 +8,7 @@
 //   shared processed-file data and the symlink cache to the next version);
 // - the regions of its source files (each parsed file version has one, see parsecache.rs);
 // - through its checker pool, the checkers' regions.
+// - through Program's per-file owner map, the synthetic-import regions retained across reused versions.
 //
 // `programOwner` is held by every `Project` value that refers to the program (projects are cloned per snapshot and
 // live as long as a snapshot or a language service refers to them), so it is dropped exactly when nothing can reach
