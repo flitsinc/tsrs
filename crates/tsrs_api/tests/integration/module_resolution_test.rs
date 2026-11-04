@@ -63,8 +63,8 @@ fn resolve_module_name_standalone_and_static() {
         ),
     );
     let snap = json::marshal(get(&r, "snapshot")).unwrap();
-    let project = str_of(get(&r, "operation.createdPrograms.0")).to_string();
-    let sp = format!("\"snapshot\":{snap},\"project\":{}", quote(&project));
+    let project = project_handle(&r);
+    let sp = format!("\"snapshot\":{snap},\"project\":{project}");
     let names = call(&s, "getSourceFileNames", &format!("{{{sp}}}"));
     assert!(json::marshal(&names).unwrap().contains(&alias));
     let d = call(&s, "getSemanticDiagnostics", &format!("{{{sp},\"files\":[{}]}}", quote(&main)));
@@ -144,15 +144,11 @@ fn custom_module_resolutions_skip_disk_layout_import_diagnostics() {
         ),
     );
     let snapshot = json::marshal(get(&response, "snapshot")).unwrap();
-    let project = str_of(get(&response, "operation.createdPrograms.0"));
+    let project = project_handle(&response);
     let diagnostics = call(
         &s,
         "getSemanticDiagnostics",
-        &format!(
-            r#"{{"snapshot":{snapshot},"project":{},"files":[{}]}}"#,
-            quote(project),
-            quote(&root)
-        ),
+        &format!(r#"{{"snapshot":{snapshot},"project":{},"files":[{}]}}"#, project, quote(&root)),
     );
     assert_eq!(diagnostics, Value::Array(vec![]), "{}", json::marshal(&diagnostics).unwrap());
     let calls = conn.calls.lock().unwrap();
@@ -183,12 +179,9 @@ fn callback_module_resolver_calls_client() {
     s.set_connection(Arc::<FakeConn>::clone(&conn));
     let r = call(&s, "createSnapshot", &req);
     let snap = json::marshal(get(&r, "snapshot")).unwrap();
-    let project = str_of(get(&r, "operation.createdPrograms.0")).to_string();
-    let names = call(
-        &s,
-        "getSourceFileNames",
-        &format!("{{\"snapshot\":{snap},\"project\":{}}}", quote(&project)),
-    );
+    let project = project_handle(&r);
+    let names =
+        call(&s, "getSourceFileNames", &format!("{{\"snapshot\":{snap},\"project\":{project}}}"));
     assert!(json::marshal(&names).unwrap().contains(&target));
     let calls = conn.calls.lock().unwrap().clone();
     let cb =

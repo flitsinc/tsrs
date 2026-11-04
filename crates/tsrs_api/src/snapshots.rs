@@ -48,6 +48,7 @@ fn project_response(p: &Project) -> Value {
         (p.kind == tsrs_project::Kind::Configured).then(|| s(p.config_file_name().to_string()));
     Obj::new()
         .set("id", s(p.id().0))
+        .set("handle", Value::Number(p.handle() as f64))
         .set_opt("configFileName", config_file_name)
         .set("currentDirectory", s(p.current_directory()))
         .set("dirty", b(p.is_dirty()))

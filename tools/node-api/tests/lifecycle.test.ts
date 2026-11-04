@@ -35,7 +35,7 @@ describe("parity: handles", () => {
         const project = snap.getConfiguredProject("/tsconfig.json")!;
         const symbol = project.checker.getSymbolAtPosition("/src/index.ts", files["/src/index.ts"].indexOf("value"))!;
         const symbolRef = { ...(symbol as any).reference ?? {}, id: (symbol as any).id };
-        const live = { snapshot: snap.id, project: project.id };
+        const live = { snapshot: snap.id, project: project.handle };
 
         const cases: Record<string, () => unknown> = {
             "valid.names": () => raw(api).apiRequest("getSourceFileNames", live),
@@ -51,7 +51,7 @@ describe("parity: handles", () => {
         };
         // Same numeric snapshot id in a second session: ids are session scoped, so this must not reach api's state.
         const otherSnap = other.createSnapshot({ openProjects: ["/tsconfig.json"] });
-        cases["foreign.sameIdOtherSession"] = () => raw(other).apiRequest("getSourceFileNames", { snapshot: snap.id, project: project.id });
+        cases["foreign.sameIdOtherSession"] = () => raw(other).apiRequest("getSourceFileNames", { snapshot: snap.id, project: project.handle });
         const outcome: Record<string, boolean> = {};
         for (const [name, fn] of Object.entries(cases)) {
             const r = attempt(fn);

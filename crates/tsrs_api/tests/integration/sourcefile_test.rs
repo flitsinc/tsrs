@@ -15,7 +15,7 @@ fn program(s: &tsrs_api::Session, root: &str) -> (u64, String) {
         Value::Number(n) => *n as u64,
         _ => unreachable!(),
     };
-    (snap, str_of(get(&r, "operation.createdPrograms.0")).to_string())
+    (snap, project_handle(&r))
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn get_source_file_binary_and_json_and_checker_handles() {
     // Binary (msgpack mode) response.
     let s = session(&dir.dir(), true);
     let (snap, project) = program(&s, &a);
-    let sp = format!("\"snapshot\":{snap},\"project\":{}", quote(&project));
+    let sp = format!("\"snapshot\":{snap},\"project\":{project}");
     let bin = match s
         .handle_request("getSourceFile", format!("{{{sp},\"file\":{}}}", quote(&a)).as_bytes())
         .unwrap()
@@ -67,21 +67,14 @@ fn get_source_file_binary_and_json_and_checker_handles() {
     let r = call(
         &s2,
         "getSourceFile",
-        &format!(
-            "{{\"snapshot\":{snap2},\"project\":{},\"file\":{}}}",
-            quote(&project2),
-            quote(&a)
-        ),
+        &format!("{{\"snapshot\":{snap2},\"project\":{},\"file\":{}}}", project2, quote(&a)),
     );
     assert!(str_of(get(&r, "data")).len() > 100);
     assert_eq!(
         call(
             &s2,
             "getSourceFile",
-            &format!(
-                "{{\"snapshot\":{snap2},\"project\":{},\"file\":\"/nope.ts\"}}",
-                quote(&project2)
-            )
+            &format!("{{\"snapshot\":{snap2},\"project\":{project2},\"file\":\"/nope.ts\"}}")
         ),
         Value::Null
     );
@@ -129,7 +122,7 @@ fn get_symbol_of_declaration_uses_cached_file_node_index() {
         "getSymbolAtPosition",
         &format!(
             "{{\"snapshot\":{snapshot},\"project\":{},\"file\":{},\"position\":9}}",
-            quote(&project),
+            project,
             quote(&file),
         ),
     );
@@ -165,10 +158,9 @@ fn get_config_source_file_root_and_extended_repeatedly() {
         Value::Number(n) => *n as u64,
         _ => unreachable!(),
     };
-    let project = str_of(get(&r, "projects.0.id")).to_string();
-    let req = |f: &str| {
-        format!("{{\"snapshot\":{snap},\"project\":{},\"file\":{}}}", quote(&project), quote(f))
-    };
+    let project = project_handle(&r);
+    let req =
+        |f: &str| format!("{{\"snapshot\":{snap},\"project\":{},\"file\":{}}}", project, quote(f));
     let get_bin =
         |f: &str| match s.handle_request("getConfigSourceFile", req(f).as_bytes()).unwrap() {
             Response::Binary(b) => b,

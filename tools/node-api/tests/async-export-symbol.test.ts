@@ -25,11 +25,18 @@ describe("parity: async getExportSymbolOfSymbol", () => {
             const viaPublic = await local.getExportSymbol();
             const raw = await (api as any).client.apiRequest("getExportSymbolOfSymbol", { symbol: local.reference });
             assert.ok(raw, "wire response");
+            // Source-file IDs are process-local. Verify them against the loaded AST before omitting
+            // only that volatile segment from the recorded declaration handles.
+            const declarations = raw.declarations.map((handle: string) => {
+                const [index, kind, fileID, ...filePath] = handle.split(".");
+                assert.equal(fileID, `#${(file as any).nodeId}`);
+                return `${index}.${kind}.${filePath.join(".")}`;
+            });
             // Identity: the wire answer is the symbol the client had cached for local.exportSymbol.
             assert.equal(raw.reference.id, viaPublic.reference.id);
             assert.notEqual(raw.reference.id, local.reference.id);
             g.check("public", { name: viaPublic.name, flags: viaPublic.flags, distinctFromLocal: viaPublic !== local });
-            g.check("wire", { name: raw.name, flags: raw.flags, checkFlags: raw.checkFlags, declarations: raw.declarations, referenceKind: raw.reference.kind });
+            g.check("wire", { name: raw.name, flags: raw.flags, checkFlags: raw.checkFlags, declarations, referenceKind: raw.reference.kind });
         }
         finally {
             await api.close();

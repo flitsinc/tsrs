@@ -113,3 +113,20 @@ pub fn str_of(v: &Value) -> &str {
 pub fn quote(s: &str) -> String {
     json::marshal_string(s)
 }
+
+/// Serialize the first project's numeric wire handle, retaining its logical ID separately for snapshot edits.
+pub fn project_handle(response: &Value) -> String {
+    let handle = get(response, "projects.0.handle");
+    assert!(matches!(handle, Value::Number(_)), "project handle must be numeric");
+    json::marshal(handle).unwrap()
+}
+
+/// Node responses carry kind and path; requests use only index and exact source-file identity.
+pub fn node_request_handle(response: &str) -> String {
+    let mut parts = response.splitn(4, '.');
+    let index = parts.next().unwrap();
+    let _kind = parts.next().unwrap();
+    let file = parts.next().unwrap();
+    assert!(file.starts_with('#'));
+    format!("{index}.{file}")
+}

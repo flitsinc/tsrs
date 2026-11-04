@@ -14,17 +14,19 @@ import (
 	"testing"
 	"unicode/utf16"
 
+	"github.com/microsoft/TypeScript/tsc/internal/api/encoder"
 	"github.com/microsoft/TypeScript/tsc/internal/ast"
 	"github.com/microsoft/TypeScript/tsc/internal/astnav"
 	"github.com/microsoft/TypeScript/tsc/internal/json"
 	"github.com/microsoft/TypeScript/tsc/internal/project"
 	"github.com/microsoft/TypeScript/tsc/internal/testutil/projecttestutil"
+	"github.com/microsoft/TypeScript/tsc/internal/tspath"
 )
 
 type probe struct {
 	s    *Session
 	snap float64
-	proj string
+	proj float64
 	out  *os.File
 }
 
@@ -115,7 +117,7 @@ func TestTsrsCheckerProbe(t *testing.T) {
 	p.snap = get(snap, "snapshot").(float64)
 	for _, pr := range get(snap, "projects").([]any) {
 		if strings.HasPrefix(get(pr, "configFileName").(string), "/p/") {
-			p.proj = get(pr, "id").(string)
+			p.proj = get(pr, "handle").(float64)
 		}
 	}
 	p.emit("flags", map[string]any{"Value": float64(ast.SymbolFlagsValue), "Type": float64(ast.SymbolFlagsType)})
@@ -207,15 +209,17 @@ func TestTsrsCheckerProbe(t *testing.T) {
 	// D. stale / foreign handles.
 	box, _ := p.call("getTypeAtPosition", p.sp("file", "/p/main.ts", "position", u16(main, "box:")))
 	id := get(box, "id")
-	_, e = p.call("getTypeArguments", map[string]any{"snapshot": p.snap, "project": "/other/tsconfig.json", "type": id})
+	_, e = p.call("getTypeArguments", map[string]any{"snapshot": p.snap, "project": 0, "type": id})
 	p.emit("err.unknownProject", e)
-	qproj := ""
+	qproj := float64(0)
 	for _, pr := range get(snap, "projects").([]any) {
 		if strings.HasPrefix(get(pr, "configFileName").(string), "/q/") {
-			qproj = get(pr, "id").(string)
+			qproj = get(pr, "handle").(float64)
 		}
 	}
 	r, e := p.call("getTypeArguments", map[string]any{"snapshot": p.snap, "project": qproj, "type": id})
+	// Project handles are process-wide counters; keep the error text stable across fixture runs.
+	e = strings.ReplaceAll(e, fmt.Sprintf("for project %v)", qproj), "for project <handle>)")
 	p.emit("err.foreignProjectType", map[string]any{"r": r, "e": e})
 	_, e = p.call("getTypeArguments", p.sp("type", 999999))
 	p.emit("err.unknownType", e)
@@ -243,7 +247,7 @@ func TestTsrsCheckerProbe(t *testing.T) {
 	p.emit("afterRelease.fileOwnedParent", e)
 }
 
-func ts2(p *probe, proj string, t any) any {
+func ts2(p *probe, proj float64, t any) any {
 	if t == nil {
 		return nil
 	}
@@ -277,7 +281,7 @@ func TestTsrsCheckerShapes(t *testing.T) {
 		t.Fatal(errs)
 	}
 	p.snap = get(snap, "snapshot").(float64)
-	p.proj = get(get(snap, "projects").([]any)[0], "id").(string)
+	p.proj = get(get(snap, "projects").([]any)[0], "handle").(float64)
 	firstLine := func(e string) string { return strings.SplitN(e, "\n", 2)[0] }
 	shape := func(label, method string, params map[string]any) any {
 		r, e := p.call(method, params)
@@ -344,8 +348,8 @@ func TestTsrsCheckerShapes(t *testing.T) {
 	shape("baseTypes.none", "getBaseTypes", p.sp("type", get(boxTarget, "id")))
 	boxSym, _ := p.call("getSymbolAtPosition", at("box:"))
 	redSym, _ := p.call("getSymbolAtPosition", at("Red ="))
-	shape("constantValue.none", "getConstantValue", p.sp("location", get(boxSym, "declarations").([]any)[0]))
-	shape("constantValue.number", "getConstantValue", p.sp("location", get(redSym, "declarations").([]any)[0]))
+	shape("constantValue.none", "getConstantValue", p.sp("location", responseRequestHandle(get(boxSym, "declarations").([]any)[0])))
+	shape("constantValue.number", "getConstantValue", p.sp("location", responseRequestHandle(get(redSym, "declarations").([]any)[0])))
 	shape("completions", "getCompletionsAtPosition", p.sp("file", "/p/main.ts", "position", u16(main, "box.value")+4))
 	shape("wellKnownSignatures", "getWellKnownSignatures", p.sp())
 
@@ -381,7 +385,7 @@ func TestTsrsCheckerShapes(t *testing.T) {
 
 	// Missing / null / empty parameter values: Go decodes into zero values (DocumentIdentifier has a
 	// custom decoder; *DocumentIdentifier and slices take null as nil).
-	sp := fmt.Sprintf(`"snapshot":%v,"project":%q`, p.snap, p.proj)
+	sp := fmt.Sprintf(`"snapshot":%v,"project":%v`, p.snap, p.proj)
 	for _, c := range [][2]string{
 		{"getSymbolAtPosition", `{` + sp + `,"position":0}`},
 		{"getSymbolAtPosition", `{` + sp + `,"file":null,"position":0}`},
@@ -442,15 +446,15 @@ func TestTsrsCheckerFlags(t *testing.T) {
 		if e != "" {
 			t.Fatal(e)
 		}
-		snaps[fx] = [2]any{get(r, "snapshot"), get(get(r, "projects").([]any)[0], "id")}
+		snaps[fx] = [2]any{get(r, "snapshot"), get(get(r, "projects").([]any)[0], "handle")}
 	}
 	for _, line := range strings.Split(strings.TrimSpace(string(casesText)), "\n") {
 		f := strings.Split(line, "\t")
 		fx, file, needle, kind, method := f[0], f[1], f[2], f[3], f[4]
 		snap, proj := snaps[fx][0], snaps[fx][1]
 		sd, _ := s.getSnapshotData(SnapshotID(snap.(float64)))
-		program, _ := sd.getProgram(project.ID(proj.(string)))
-		sf := program.GetSourceFile("/" + fx + "/" + file)
+		program, _ := sd.getProgram(project.Handle(proj.(float64)))
+		sf := program.GetSourceFile(tspath.RootedFilePathFromNormalized("/" + fx + "/" + file))
 		text := sf.Text()
 		pos := strings.Index(text, needle) + len(needle)
 		if kind != "alias" {
@@ -472,7 +476,7 @@ func TestTsrsCheckerFlags(t *testing.T) {
 		if i := strings.Index(method, "+prop:"); i >= 0 {
 			method, prop = method[:i], method[i+len("+prop:"):]
 		}
-		sp := map[string]any{"snapshot": snap, "project": proj, "location": string(nodeHandleFrom(node))}
+		sp := map[string]any{"snapshot": snap, "project": proj, "location": nodeRequestHandle(node)}
 		r, e := p.call(method, sp)
 		if prop != "" && e == "" {
 			p.call("getPropertyOfType", map[string]any{"snapshot": snap, "project": proj, "type": get(r, "id"), "name": prop})
@@ -493,4 +497,14 @@ func TestTsrsCheckerFlags(t *testing.T) {
 			}
 		}
 	}
+}
+
+func nodeRequestHandle(node *ast.Node) string {
+	file := ast.GetSourceFileOfNode(node)
+	return fmt.Sprintf("%d.#%d", encoder.GetNodeIndexTable(file).GetIndex(node), sourceFileNodeID(file))
+}
+
+func responseRequestHandle(value any) string {
+	parts := strings.SplitN(value.(string), ".", 4)
+	return parts[0] + "." + parts[2]
 }

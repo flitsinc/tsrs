@@ -19,7 +19,7 @@ fn setup<'h>(host: &'h dyn CheckerHost, p: &Params) -> CheckerResult<Setup<'h>> 
 
 // Wrong-kind requests: pinned Go does not validate these; the handler panics and the ipc connection
 // (or batchRequests) recovers it as `panic: <value>\n<stack>`. The checks below reproduce the same
-// failure class and first line (recorded in testdata/go_probe/go_shapes_b85298b6.jsonl) without
+// failure class and first line (recorded in testdata/go_probe/go_shapes_e2bc2bcb.jsonl) without
 // actually panicking (no stack is attached).
 fn go_panic(message: impl std::fmt::Display) -> CheckerError {
     CheckerError { kind: CheckerErrorKind::Internal, message: format!("panic: {message}") }
@@ -27,43 +27,9 @@ fn go_panic(message: impl std::fmt::Display) -> CheckerError {
 
 const GO_NIL_DEREF: &str = "runtime error: invalid memory address or nil pointer dereference";
 
-/// Go's name for the `checker.TypeData` implementation behind a type.
-fn go_type_data_name(tag: TypeDataTag) -> &'static str {
-    match tag {
-        TypeDataTag::Intrinsic => "IntrinsicType",
-        TypeDataTag::Literal => "LiteralType",
-        TypeDataTag::UniqueESSymbol => "UniqueESSymbolType",
-        TypeDataTag::Object => "ObjectType",
-        TypeDataTag::TypeReference => "TypeReference",
-        TypeDataTag::Interface => "InterfaceType",
-        TypeDataTag::Tuple => "TupleType",
-        TypeDataTag::InstantiationExpression => "InstantiationExpressionType",
-        TypeDataTag::Mapped => "MappedType",
-        TypeDataTag::ReverseMapped => "ReverseMappedType",
-        TypeDataTag::EvolvingArray => "EvolvingArrayType",
-        TypeDataTag::Union => "UnionType",
-        TypeDataTag::Intersection => "IntersectionType",
-        TypeDataTag::TypeParameter => "TypeParameter",
-        TypeDataTag::Index => "IndexType",
-        TypeDataTag::IndexedAccess => "IndexedAccessType",
-        TypeDataTag::TemplateLiteral => "TemplateLiteralType",
-        TypeDataTag::StringMapping => "StringMappingType",
-        TypeDataTag::Substitution => "SubstitutionType",
-        TypeDataTag::Conditional => "ConditionalType",
-    }
-}
-
-/// Go `t.AsXxx()` (a `t.data.(*Xxx)` type assertion).
+/// Go `t.AsXxx()` calls castType, which checks the stored kind before casting.
 fn tagged(t: P<Type>, tag: TypeDataTag) -> CheckerResult<P<Type>> {
-    if t.data_tag() == tag {
-        Ok(t)
-    } else {
-        Err(go_panic(format!(
-            "interface conversion: checker.TypeData is *checker.{}, not *checker.{}",
-            go_type_data_name(t.data_tag()),
-            go_type_data_name(tag)
-        )))
-    }
+    if t.data_tag() == tag { Ok(t) } else { Err(go_panic("Invalid type cast")) }
 }
 
 /// Go `t.AsInterfaceType()` (nil for non-interfaces) followed by a field read.
@@ -250,7 +216,7 @@ pub fn resolve_type_symbol_property(
         TypeSymbolProperty::AliasSymbol => t.alias().and_then(|a| a.symbol()),
     };
     match result {
-        Some(symbol) => sd.symbol_response(symbol, &sd.project),
+        Some(symbol) => sd.symbol_response(symbol, sd.project),
         None => Ok(Value::Null),
     }
 }
@@ -542,12 +508,12 @@ pub fn signature_property(
             Ok(Value::Array(
                 params
                     .iter()
-                    .map(|sym| sd.symbol_response(*sym, &sd.project))
+                    .map(|sym| sd.symbol_response(*sym, sd.project))
                     .collect::<CheckerResult<_>>()?,
             ))
         }
         SignatureProperty::ThisParameter => match sig.this_parameter() {
-            Some(sym) => sd.symbol_response(sym, &sd.project),
+            Some(sym) => sd.symbol_response(sym, sd.project),
             None => Ok(Value::Null),
         },
         SignatureProperty::Target => match sig.target() {
@@ -669,7 +635,7 @@ pub fn get_well_known_symbols(host: &dyn CheckerHost, p: &Params) -> CheckerResu
     let mut o = obj();
     for (name, symbol) in [("unknown", unknown), ("undefined", undefined), ("arguments", arguments)]
     {
-        let (id, _) = registry.register_symbol(symbol, &s.sd.project)?;
+        let (id, _) = registry.register_symbol(symbol, s.sd.project)?;
         o.num(name, id as f64);
     }
     Ok(o.build())
@@ -678,7 +644,7 @@ pub fn get_well_known_symbols(host: &dyn CheckerHost, p: &Params) -> CheckerResu
 pub fn get_well_known_signatures(host: &dyn CheckerHost, p: &Params) -> CheckerResult<Value> {
     let mut s = setup(host, p)?;
     let unknown = s.c().get_unknown_signature();
-    let id = s.sd.scope.registry.register_signature(&s.sd.project, s.checker_id, unknown)?;
+    let id = s.sd.scope.registry.register_signature(s.sd.project, s.checker_id, unknown)?;
     let mut o = obj();
     o.num("unknown", id as f64);
     Ok(o.build())
@@ -714,8 +680,8 @@ pub fn type_to_type_node(host: &dyn CheckerHost, p: &Params) -> CheckerResult<Ch
     let enclosing = enclosing(&s, p)?;
     let flags = NodeBuilderFlags::from_bits_retain(p.i32("flags")? as u32);
     match s.c().type_to_type_node(t, enclosing, flags, None) {
-        Some(node) => Ok(CheckerResponse::EncodedNode(host.encode_node(node)?)),
-        None => Ok(CheckerResponse::Json(Value::Null)),
+        Some(node) => Ok(CheckerResponse::EncodedNode(Some(host.encode_node(node)?))),
+        None => Ok(CheckerResponse::EncodedNode(None)),
     }
 }
 
@@ -734,7 +700,7 @@ pub fn signature_to_signature_declaration(
     let kind = Kind::from_i16(kind as i16);
     let flags = NodeBuilderFlags::from_bits_retain(p.i32("flags")? as u32);
     match s.c().signature_to_signature_declaration(sig, kind, enclosing, flags) {
-        Some(node) => Ok(CheckerResponse::EncodedNode(host.encode_node(node)?)),
-        None => Ok(CheckerResponse::Json(Value::Null)),
+        Some(node) => Ok(CheckerResponse::EncodedNode(Some(host.encode_node(node)?))),
+        None => Ok(CheckerResponse::EncodedNode(None)),
     }
 }

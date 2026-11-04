@@ -1,4 +1,5 @@
 use std::fmt::Write as _;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use tsrs_ast::Diagnostic;
@@ -42,6 +43,11 @@ pub(crate) const HR: &str = "-----------------------------------------------";
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Default)]
 pub struct ID(pub String);
+
+/// Identifies a project's lifetime across snapshot clones.
+pub type Handle = u64;
+
+static NEXT_PROJECT_HANDLE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Default)]
 pub struct ConfiguredProjectID(pub(crate) Path);
@@ -177,6 +183,7 @@ pub enum PendingReload {
 pub struct Project {
     pub kind: Kind,
     id: ID,
+    handle: Handle,
     pub(crate) current_directory: String,
     config_file_name: String,
     pub(crate) config_file_path: Path,
@@ -389,6 +396,7 @@ fn new_project(
     Project {
         kind,
         id,
+        handle: NEXT_PROJECT_HANDLE.fetch_add(1, Ordering::SeqCst) + 1,
         current_directory: current_directory.to_string(),
         config_file_name: String::new(),
         config_file_path: Path::default(),
@@ -454,6 +462,10 @@ impl Project {
     }
 
     // project.go:333
+    pub fn handle(&self) -> Handle {
+        self.handle
+    }
+
     pub fn id(&self) -> ID {
         self.id.clone()
     }
@@ -860,6 +872,7 @@ impl Cloneable for Project {
         Project {
             kind: self.kind,
             id: self.id.clone(),
+            handle: self.handle,
             current_directory: self.current_directory.clone(),
             config_file_name: self.config_file_name.clone(),
             config_file_path: self.config_file_path.clone(),

@@ -9,7 +9,7 @@ use tsrs_ls as ls;
 use crate::configfileregistry::ConfigFileRegistry;
 use crate::dirty::{Shared, SharedMap};
 use crate::overlayfs::{OverlayMap, ToPath};
-use crate::project::{ConfiguredProjectID, ID, Project, SyntheticProjectID};
+use crate::project::{ConfiguredProjectID, Handle, ID, Project, SyntheticProjectID};
 
 #[derive(Clone)]
 pub struct ProjectCollection {
@@ -37,6 +37,7 @@ pub struct ProjectCollection {
 
     // Go: openConfiguredProjectsOnce + openConfiguredProjects (not copied by clone()).
     open_configured_projects: Arc<OnceLock<Arc<Set<ConfiguredProjectID>>>>,
+    projects_by_handle: Arc<OnceLock<FxHashMap<Handle, Shared<Project>>>>,
 }
 
 // APIState tracks the projects and files that API clients have explicitly opened.
@@ -83,6 +84,7 @@ pub(crate) fn new_project_collection(to_path: ToPath, open_files: Set<Path>) -> 
         inferred_project: None,
         api_state: APIState::default(),
         open_configured_projects: Arc::new(OnceLock::new()),
+        projects_by_handle: Arc::new(OnceLock::new()),
     }
 }
 
@@ -109,6 +111,28 @@ impl ProjectCollection {
             return self.configured_projects.get(&configured_id).cloned();
         }
         None
+    }
+
+    /// Resolves a project lifetime only within this snapshot's collection.
+    pub fn get_project_by_handle(&self, handle: Handle) -> Option<Shared<Project>> {
+        if handle == 0 {
+            return None;
+        }
+        self.projects_by_handle
+            .get_or_init(|| {
+                let mut projects = FxHashMap::default();
+                for project in
+                    self.configured_projects.values().chain(self.synthetic_projects.values())
+                {
+                    projects.insert(project.handle(), project.clone());
+                }
+                if let Some(project) = &self.inferred_project {
+                    projects.insert(project.handle(), project.clone());
+                }
+                projects
+            })
+            .get(&handle)
+            .cloned()
     }
 
     // projectcollection.go:92
@@ -393,6 +417,7 @@ impl ProjectCollection {
             file_default_projects: self.file_default_projects.clone(),
             api_state: self.api_state.clone(),
             open_configured_projects: Arc::new(OnceLock::new()),
+            projects_by_handle: Arc::new(OnceLock::new()),
         }
     }
 }

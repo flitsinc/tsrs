@@ -64,7 +64,7 @@ fn options_value_to_json(v: &CompilerOptionsValue) -> Value {
 }
 
 /// Go `jsonValueToAny`: numbers are float64, arrays `[]any`, objects ordered maps.
-fn json_to_options_value(v: &Value) -> CompilerOptionsValue {
+pub(crate) fn json_to_options_value(v: &Value) -> CompilerOptionsValue {
     match v {
         Value::Null => CompilerOptionsValue::Null,
         Value::Bool(b) => CompilerOptionsValue::Bool(*b),

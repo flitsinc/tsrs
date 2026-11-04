@@ -7,7 +7,6 @@
 use tsrs_api_codec::{DecodeError, DecodedNode, decode_nodes};
 use tsrs_core::json::Value;
 use tsrs_printer::{PrintHandlers, PrinterOptions, new_printer};
-use tsrs_project::ID as ProjectID;
 
 use crate::batch::base64_decode;
 use crate::handler::{ApiError, ApiResult};
@@ -57,7 +56,7 @@ impl Session {
 
     pub(crate) fn handle_format_node_for_insertion(&self, p: Params) -> ApiResult<Value> {
         let sd = self.snapshot_data(p.u64("snapshot")?)?;
-        let program = sd.get_program(&ProjectID(p.str("project")?.to_string()))?;
+        let program = sd.get_program(p.u64("project")?)?;
         let target = resolve_source_file(program, &p.document("file")?)?;
         let decoded = decode(p.str("data")?)?;
         let position = u32::try_from(p.u64("position")?)

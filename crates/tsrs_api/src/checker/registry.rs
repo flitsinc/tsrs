@@ -18,6 +18,7 @@ use rustc_hash::FxHashMap;
 use tsrs_ast::Symbol;
 use tsrs_checker::{Signature, Type};
 use tsrs_core::P;
+use tsrs_project::Handle;
 
 use super::host::{CheckerError, CheckerResult};
 
@@ -33,8 +34,8 @@ struct RegistryState {
     released: bool,
     symbols: FxHashMap<u64, P<Symbol>>,
     // Go `symbolCanonicalProjects`: first writer wins.
-    symbol_projects: FxHashMap<u64, String>,
-    projects: FxHashMap<String, ProjectRegistry>,
+    symbol_projects: FxHashMap<u64, Handle>,
+    projects: FxHashMap<Handle, ProjectRegistry>,
     // Snapshots derived during a request (auto-import preparation) whose symbols were handed out;
     // dereferenced on release so those pointers stay valid exactly as long as the registry.
     retained: Vec<std::sync::Arc<tsrs_project::Snapshot>>,
@@ -96,12 +97,9 @@ impl CheckerRegistry {
     pub(crate) fn register_symbol(
         &self,
         symbol: P<Symbol>,
-        canonical_project: &str,
-    ) -> CheckerResult<(u64, String)> {
-        assert!(
-            !canonical_project.is_empty(),
-            "registerSymbol requires a non-empty canonical project"
-        );
+        canonical_project: Handle,
+    ) -> CheckerResult<(u64, Handle)> {
+        assert!(canonical_project != 0, "registerSymbol requires a non-empty canonical project");
         let id = tsrs_ast::get_symbol_id(symbol).0;
         let mut st = self.lock();
         Self::check_live(&st)?;
@@ -111,8 +109,7 @@ impl CheckerRegistry {
                 entry.insert(symbol);
             }
         }
-        let project =
-            st.symbol_projects.entry(id).or_insert_with(|| canonical_project.to_string()).clone();
+        let project = *st.symbol_projects.entry(id).or_insert(canonical_project);
         Ok((id, project))
     }
 
@@ -128,12 +125,12 @@ impl CheckerRegistry {
         })
     }
 
-    fn project_for_checker<'a>(
-        st: &'a mut RegistryState,
-        project: &str,
+    fn project_for_checker(
+        st: &mut RegistryState,
+        project: Handle,
         checker_id: u32,
-    ) -> &'a mut ProjectRegistry {
-        let reg = st.projects.entry(project.to_string()).or_default();
+    ) -> &mut ProjectRegistry {
+        let reg = st.projects.entry(project).or_default();
         if reg.checker_id != checker_id {
             // The project's API checker changed: handles from the previous checker are stale.
             *reg = ProjectRegistry { checker_id, ..Default::default() };
@@ -144,11 +141,11 @@ impl CheckerRegistry {
     /// Go `registerType`. `checker_id` is the id of the API checker that produced `t`.
     pub(crate) fn register_type(
         &self,
-        project: &str,
+        project: Handle,
         checker_id: u32,
         t: P<Type>,
     ) -> CheckerResult<u32> {
-        assert!(!project.is_empty(), "registerType: empty project ID");
+        assert!(project != 0, "registerType: empty project ID");
         let id = t.id().0;
         let mut st = self.lock();
         Self::check_live(&st)?;
@@ -165,19 +162,19 @@ impl CheckerRegistry {
     /// Go `resolveTypeHandle`. With `checker_id = Some(id)` the handle must come from that checker.
     pub fn resolve_type(
         &self,
-        project: &str,
+        project: Handle,
         id: u32,
         checker_id: Option<u32>,
     ) -> CheckerResult<P<Type>> {
         if id == 0 {
             return Err(CheckerError::client("empty type handle"));
         }
-        if project.is_empty() {
+        if project == 0 {
             return Err(CheckerError::client(format!("empty project ID for type handle {id}")));
         }
         let st = self.lock();
         Self::check_live(&st)?;
-        let Some(reg) = st.projects.get(project) else {
+        let Some(reg) = st.projects.get(&project) else {
             return Err(CheckerError::client(format!(
                 "type handle {id} not found (no registry for project {project})"
             )));
@@ -195,11 +192,11 @@ impl CheckerRegistry {
     /// Go `registerSignature`.
     pub(crate) fn register_signature(
         &self,
-        project: &str,
+        project: Handle,
         checker_id: u32,
         sig: P<Signature>,
     ) -> CheckerResult<u64> {
-        assert!(!project.is_empty(), "registerSignature: empty project ID");
+        assert!(project != 0, "registerSignature: empty project ID");
         let id = sig.id().0 as u64;
         let mut st = self.lock();
         Self::check_live(&st)?;
@@ -216,21 +213,21 @@ impl CheckerRegistry {
     /// Go `resolveSignatureHandle`.
     pub(crate) fn resolve_signature(
         &self,
-        project: &str,
+        project: Handle,
         id: u64,
         checker_id: Option<u32>,
     ) -> CheckerResult<P<Signature>> {
         if id == 0 {
             return Err(CheckerError::client("empty signature handle"));
         }
-        if project.is_empty() {
+        if project == 0 {
             return Err(CheckerError::client(format!(
                 "empty project ID for signature handle {id}"
             )));
         }
         let st = self.lock();
         Self::check_live(&st)?;
-        let Some(reg) = st.projects.get(project) else {
+        let Some(reg) = st.projects.get(&project) else {
             return Err(CheckerError::client(format!(
                 "signature handle {id} not found (no registry for project {project})"
             )));
@@ -246,7 +243,7 @@ impl CheckerRegistry {
     }
 
     /// Checker that produced the project's registered types/signatures (0 if none yet).
-    pub fn project_checker_id(&self, project: &str) -> u32 {
-        self.lock().projects.get(project).map_or(0, |r| r.checker_id)
+    pub fn project_checker_id(&self, project: Handle) -> u32 {
+        self.lock().projects.get(&project).map_or(0, |r| r.checker_id)
     }
 }

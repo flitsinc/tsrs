@@ -218,14 +218,14 @@ fn params_decode_before_lookups_and_ignore_unknown_keys() {
         "getCompletionsAtPosition",
         "getSourceFile",
     ] {
-        let e = call_err(&s, method, r#"{"snapshot":999,"project":"p","file":null}"#);
+        let e = call_err(&s, method, r#"{"snapshot":999,"project":1,"file":null}"#);
         assert!(
             e.starts_with("api: invalid request:")
                 && e.contains("DocumentIdentifier: expected string or object, got null"),
             "{method}: {e}"
         );
         // An absent file is the zero value; the lookup error comes back.
-        let e = call_err(&s, method, r#"{"snapshot":999,"project":"p"}"#);
+        let e = call_err(&s, method, r#"{"snapshot":999,"project":1}"#);
         assert!(e.starts_with("api: client error:"), "{method}: {e}");
     }
     // Unknown keys are ignored (Go): `file` is not a field of these methods.
@@ -253,8 +253,8 @@ fn field_values_match_go_classes() {
     for (method, payload) in [
         ("release", r#"{"snapshot":1e3}"#),
         ("release", r#"{"snapshot":1.0}"#),
-        ("getSourceFileNames", r#"{"snapshot":1E2,"project":"p"}"#),
-        ("getTypesAtPositions", r#"{"snapshot":1,"project":"p","file":"/a.ts","positions":[1e1]}"#),
+        ("getSourceFileNames", r#"{"snapshot":1E2,"project":1}"#),
+        ("getTypesAtPositions", r#"{"snapshot":1,"project":1,"file":"/a.ts","positions":[1e1]}"#),
     ] {
         let e = call_err(&s, method, payload);
         assert!(
@@ -269,7 +269,7 @@ fn field_values_match_go_classes() {
         ("release", r#"{"snapshot":18446744073709551616}"#),
         (
             "getTypesAtPositions",
-            r#"{"snapshot":1,"project":"p","file":"/a.ts","positions":[4294967296]}"#,
+            r#"{"snapshot":1,"project":1,"file":"/a.ts","positions":[4294967296]}"#,
         ),
     ] {
         let e = call_err(&s, method, payload);
@@ -280,8 +280,8 @@ fn field_values_match_go_classes() {
     }
     // Array element kinds are part of decoding: no lookup, no per-item batch error.
     for (method, payload) in [
-        ("getSymbolsAtLocations", r#"{"snapshot":0,"project":"p","locations":[1]}"#),
-        ("getTypesAtPositions", r#"{"snapshot":0,"project":"p","file":"/a.ts","positions":["x"]}"#),
+        ("getSymbolsAtLocations", r#"{"snapshot":0,"project":1,"locations":[1]}"#),
+        ("getTypesAtPositions", r#"{"snapshot":0,"project":1,"file":"/a.ts","positions":["x"]}"#),
         ("batchRequests", r#"{"requests":[1]}"#),
     ] {
         let e = call_err(&s, method, payload);
@@ -380,7 +380,7 @@ fn nested_integer_literals_are_exact_and_checked() {
     }
     // Nested wrong kinds inside arrays of structs.
     let e =
-        call_err(&s, "getTypesOfSymbols", r#"{"snapshot":1,"project":"p","symbols":[{"id":1e3}]}"#);
+        call_err(&s, "getTypesOfSymbols", r#"{"snapshot":1,"project":1,"symbols":[{"id":1e3}]}"#);
     assert!(e.starts_with("api: invalid request: failed to unmarshal"), "{e}");
 }
 
@@ -399,8 +399,7 @@ fn external_struct_decoding_matches_go_classes() {
         let e = call_err(&s, method, payload);
         assert!(e.starts_with("api: invalid request:"), "{method} {payload}: {e}");
     };
-    // CompilerOptions: Go keeps an unknown int32 enum value (echoed back); exponent syntax is invalid; malformed
-    // tristates and unknown options are ignored.
+    // RawCompilerOptions keeps unknown int32 enums and converts float64 values after decoding.
     call(
         &s,
         "transpileModule",
@@ -423,17 +422,24 @@ fn external_struct_decoding_matches_go_classes() {
         get(&r, "projects.0.parsedCommandLine.options.module"),
         &tsrs_core::json::Value::Number(1.0)
     );
-    invalid(
+    call(
+        &s,
         "transpileModule",
         r#"{"input":"const x: number = 1;","options":{"compilerOptions":{"target":1e1}}}"#,
     );
-    invalid(
+    let r = call(
+        &s,
         "createSnapshot",
         &format!(
             r#"{{"createPrograms":[{{"rootFiles":[{f}],"compilerOptions":{{"target":1e1}}}}]}}"#
         ),
     );
-    invalid(
+    assert_eq!(
+        get(&r, "projects.0.parsedCommandLine.options.target"),
+        &tsrs_core::json::Value::Number(10.0)
+    );
+    call(
+        &s,
         "transpileModule",
         r#"{"input":"const x: number = 1;","options":{"compilerOptions":{"target":9007199254740993}}}"#,
     );
@@ -505,11 +511,11 @@ fn external_struct_decoding_matches_go_classes() {
             r#"{{"createPrograms":[{{"rootFiles":[{f}],"compilerOptions":{{}},"options":{{"projectReferences":[{{"path":"/nonexistent/q"}}]}}}}]}}"#
         ),
     );
-    let project = str_of(get(&r, "projects.0.id")).to_string();
+    let project = project_handle(&r);
     let d = call(
         &s,
         "getProgramDiagnostics",
-        &format!(r#"{{"snapshot":{},"project":{}}}"#, snapshot(&r), quote(&project)),
+        &format!(r#"{{"snapshot":{},"project":{}}}"#, snapshot(&r), project),
     );
     assert!(
         tsrs_core::json::marshal(&d).unwrap().contains("not found"),
@@ -518,8 +524,8 @@ fn external_struct_decoding_matches_go_classes() {
     );
 }
 
-/// runtime-f2-review (`f2_enum_cases.json)`: unknown int32 enum values compile like pinned Go, and Go `*int`
-/// options keep their exact 64-bit value.
+/// Unknown int32 enum values compile like pinned Go. `RawCompilerOptions` decodes numbers through float64;
+/// typed `BuildOptions` retains strict Go int64 syntax and range checks.
 #[test]
 fn unknown_enum_values_and_go_int_options_match_go() {
     let dir = TempDir::new("f2enums");
@@ -570,7 +576,7 @@ fn unknown_enum_values_and_go_int_options_match_go() {
     };
     let diags = raw(
         "getSemanticDiagnostics",
-        &format!(r#"{{"snapshot":{snap},"project":"/dev/null/synthetic/1"}}"#),
+        &format!(r#"{{"snapshot":{snap},"project":{}}}"#, project_handle(&r)),
     )
     .unwrap();
     assert!(diags.contains("\"code\":7026") && !diags.contains("\"code\":17004"), "{diags}");
@@ -599,24 +605,24 @@ fn unknown_enum_values_and_go_int_options_match_go() {
         "api: client error: unsupported moduleResolution value -1 (not a ModuleResolutionKind)"
     );
     call(&s, "createSnapshot", "{}");
-    // Go `*int`: any int64, echoed exactly; beyond int64, fractions and exponents are invalid (accepted builders
-    // values are covered with the CLI build backend in tsrs_cli `api_test`).
-    for n in ["2147483648", "-2147483649", "9223372036854775807"] {
+    // RawCompilerOptions uses float64, unlike the typed core.CompilerOptions fields.
+    for n in ["2147483648", "-2147483649"] {
         let out = raw("createSnapshot", &format!(r#"{{"createPrograms":[{{"rootFiles":[{}],"compilerOptions":{{"maxNodeModuleJsDepth":{n}}}}}]}}"#, quote(&a))).unwrap();
         assert!(out.contains(&format!("\"maxNodeModuleJsDepth\":{n}")), "{n}: {out}");
     }
-    // `checkers` is a Go *int too; the checker pool clamps it like Go (max(min(n, files, 256), 1)).
-    for n in ["2147483648", "9223372036854775807", "-1", "0", "4"] {
+    // The checker pool clamps the converted value like Go (max(min(n, files, 256), 1)).
+    for n in ["2147483648", "-1", "0", "4"] {
         let out = raw("createSnapshot", &format!(r#"{{"createPrograms":[{{"rootFiles":[{}],"compilerOptions":{{"checkers":{n}}}}}]}}"#, quote(&a))).unwrap();
         assert!(out.contains(&format!("\"checkers\":{n}")) || n == "0", "{n}: {out}");
-        let snap = match get(&tsrs_core::json::unmarshal(&out).unwrap(), "snapshot") {
+        let response = tsrs_core::json::unmarshal(&out).unwrap();
+        let snap = match get(&response, "snapshot") {
             tsrs_core::json::Value::Number(n) => *n as u64,
             _ => unreachable!(),
         };
         assert_eq!(
             raw(
                 "getSemanticDiagnostics",
-                &format!(r#"{{"snapshot":{snap},"project":"/dev/null/synthetic/1"}}"#)
+                &format!(r#"{{"snapshot":{snap},"project":{}}}"#, project_handle(&response))
             )
             .unwrap(),
             "[]"
@@ -629,21 +635,19 @@ fn unknown_enum_values_and_go_int_options_match_go() {
         )
         .unwrap();
     }
-    for n in ["9223372036854775808", "1.5", "1e0", "1.0"] {
-        let e = raw("createSnapshot", &format!(r#"{{"createPrograms":[{{"rootFiles":[{}],"compilerOptions":{{"checkers":{n}}}}}]}}"#, quote(&a))).unwrap_err();
-        assert!(e.starts_with("api: invalid request:"), "checkers {n}: {e}");
-        let e = raw(
+    for (n, expected) in [("1.5", "1"), ("1e0", "1"), ("1.0", "1")] {
+        let out = raw("createSnapshot", &format!(r#"{{"createPrograms":[{{"rootFiles":[{}],"compilerOptions":{{"checkers":{n},"maxNodeModuleJsDepth":{n}}}}}]}}"#, quote(&a))).unwrap();
+        assert!(out.contains(&format!("\"checkers\":{expected}")), "{n}: {out}");
+        assert!(out.contains(&format!("\"maxNodeModuleJsDepth\":{expected}")), "{n}: {out}");
+        raw(
             "transpileModule",
             &format!(
                 r#"{{"input":"const x = 1;","options":{{"compilerOptions":{{"checkers":{n}}}}}}}"#
             ),
         )
-        .unwrap_err();
-        assert!(e.starts_with("api: invalid request:"), "checkers {n}: {e}");
+        .unwrap();
     }
     for n in ["9223372036854775808", "1.5", "1e0", "1.0"] {
-        let e = raw("createSnapshot", &format!(r#"{{"createPrograms":[{{"rootFiles":[{}],"compilerOptions":{{"maxNodeModuleJsDepth":{n}}}}}]}}"#, quote(&a))).unwrap_err();
-        assert!(e.starts_with("api: invalid request:"), "{n}: {e}");
         let e = raw(
             "createBuildOrchestrator",
             &format!(r#"{{"rootNames":["/x/tsconfig.json"],"buildOptions":{{"builders":{n}}}}}"#),

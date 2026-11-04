@@ -64,6 +64,7 @@ pub type CheckerResult<T> = Result<T, CheckerError>;
 /// A handler result. `EncodedNode` carries the binary AST encoding of a synthesized node
 /// (typeToTypeNode / signatureToSignatureDeclaration); the transport sends it as raw binary (msgpack)
 /// or as `{ "data": base64 }` (JSON-RPC), exactly like Go's `RawBinary` / `SourceFileResponse`.
+/// An absent node is empty binary in `MessagePack` mode and null in JSON mode.
 #[derive(Clone, Debug, PartialEq)]
 #[expect(
     clippy::too_long_first_doc_paragraph,
@@ -71,7 +72,7 @@ pub type CheckerResult<T> = Result<T, CheckerError>;
 )]
 pub enum CheckerResponse {
     Json(Value),
-    EncodedNode(Vec<u8>),
+    EncodedNode(Option<Vec<u8>>),
 }
 
 /// A retained snapshot for the duration of one request. Core must keep the snapshot referenced (and its

@@ -208,6 +208,7 @@ pub struct Program {
     // Reused programs can retain synthetic imports from earlier edits of other files.
     // A region per replaced file follows those imports across every shallow map clone.
     synthetic_import_regions: Arc<FxHashMap<Path, tsrs_core::arena::Region>>,
+    source_files_by_node_id: OnceLock<FxHashMap<ast::NodeId, P<SourceFile>>>,
     processed: &'static ProcessedFiles,
     project_reference_file_mapper: &'static ProjectReferenceFileMapper,
     processing_diagnostics: Mutex<Vec<ProcessingDiagnostic>>,
@@ -547,6 +548,7 @@ pub fn new_program(opts: ProgramOptions) -> &'static Program {
             &mut processed.jsx_runtime_import_specifiers,
         )),
         synthetic_import_regions: Arc::default(),
+        source_files_by_node_id: OnceLock::new(),
         processed: Box::leak(Box::new(processed)),
         project_reference_file_mapper,
         processing_diagnostics: Mutex::new(processing_diagnostics),
@@ -815,6 +817,7 @@ impl Program {
             import_helpers_import_specifiers: Arc::clone(&self.import_helpers_import_specifiers),
             jsx_runtime_import_specifiers: Arc::clone(&self.jsx_runtime_import_specifiers),
             synthetic_import_regions: Arc::clone(&self.synthetic_import_regions),
+            source_files_by_node_id: OnceLock::new(),
             processed: self.processed,
             project_reference_file_mapper: self.project_reference_file_mapper,
             processing_diagnostics: Mutex::new(self.processing_diagnostics().clone()),
@@ -3118,6 +3121,19 @@ impl Program {
 
     pub fn get_source_file_by_path(&self, path: &Path) -> Option<P<SourceFile>> {
         self.files_by_path.get(path).copied()
+    }
+
+    pub fn get_source_file_by_node_id(&self, id: ast::NodeId) -> Option<P<SourceFile>> {
+        self.source_files_by_node_id
+            .get_or_init(|| {
+                let mut files = FxHashMap::default();
+                for file in self.get_source_files() {
+                    files.insert(ast::get_node_id(file.as_node()), *file);
+                }
+                files
+            })
+            .get(&id)
+            .copied()
     }
 
     pub(crate) fn get_source_file_by_path_str(&self, path: &str) -> Option<P<SourceFile>> {

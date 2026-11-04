@@ -364,9 +364,9 @@ fn open_file_preserves_windows_drive_letter_case() {
         get_current(&session, &format!(r#"{{"changes":{{"openFiles":["{FILE_NAME}"]}}}}"#))
             .unwrap();
 
-    let project = tsrs_project::ID(str_of(get(&response, "projects.0.id")).to_string());
+    let Value::Number(project) = get(&response, "projects.0.handle") else { panic!() };
     let snapshot = session.snapshot_data(handle(&response)).unwrap();
-    let program = snapshot.get_program(&project).unwrap();
+    let program = snapshot.get_program(*project as u64).unwrap();
     assert_eq!(program.get_source_file(FILE_NAME).unwrap().file_name(), FILE_NAME);
     drop(snapshot);
     session.close();
@@ -595,9 +595,9 @@ fn open_projects_with_circular_extends_report_circularity() {
         .handle_request(
             "getConfigFileParsingDiagnostics",
             format!(
-                r#"{{"snapshot":{},"project":"{}"}}"#,
+                r#"{{"snapshot":{},"project":{}}}"#,
                 handle(&response),
-                str_of(get(project, "id"))
+                json::marshal(get(project, "handle")).unwrap()
             )
             .as_bytes(),
         )

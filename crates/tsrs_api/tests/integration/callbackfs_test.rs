@@ -112,22 +112,18 @@ fn program_reads_through_client_callbacks() {
         ),
     );
     let snap = json::marshal(get(&r, "snapshot")).unwrap();
-    let project = str_of(get(&r, "operation.createdPrograms.0")).to_string();
+    let project = project_handle(&r);
     let names = json::marshal(&call(
         &s,
         "getSourceFileNames",
-        &format!("{{\"snapshot\":{snap},\"project\":{}}}", quote(&project)),
+        &format!("{{\"snapshot\":{snap},\"project\":{project}}}"),
     ))
     .unwrap();
     assert!(names.contains(&b), "{names}");
     let d = call(
         &s,
         "getSemanticDiagnostics",
-        &format!(
-            "{{\"snapshot\":{snap},\"project\":{},\"files\":[{}]}}",
-            quote(&project),
-            quote(&a)
-        ),
+        &format!("{{\"snapshot\":{snap},\"project\":{},\"files\":[{}]}}", project, quote(&a)),
     );
     assert_eq!(get(&d, "0.code"), &Value::Number(2322.0));
     assert!(client.calls.lock().unwrap().iter().any(|c| c == "readFile"));

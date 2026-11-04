@@ -111,15 +111,35 @@ fn node_handles_round_trip() {
     for i in 1..table.len() as u32 {
         let Some(node) = table.node(i) else { continue };
         let h = node_handle(&table, file.get(), node);
-        let p = parse_node_handle(&h).unwrap();
-        assert_eq!((p.index, p.path), (i, "/fixtures/basic.ts"));
-        assert_eq!(p.kind, (node.kind() as u32).to_string());
+        assert_eq!(
+            h,
+            format!(
+                "{i}.{}.#{}./fixtures/basic.ts",
+                node.kind() as u32,
+                tsrs_ast::get_node_id(file.as_node()).0
+            )
+        );
+        let p = parse_node_handle(&format!("{i}.#{}", tsrs_ast::get_node_id(file.as_node()).0))
+            .unwrap();
+        assert_eq!((p.index, p.source_file_id), (i, tsrs_ast::get_node_id(file.as_node()).0));
         assert_eq!(resolve_node_index(&table, p.index), Some(node));
         n += 1;
     }
     assert!(n > 10);
-    assert_eq!(parse_node_handle("12.80./a/b.c.ts").unwrap().path, "/a/b.c.ts");
-    for bad in ["", "1", "1.2", "-1.2./a", "+1.2./a", "x.2./a", "4294967296.1./a"] {
+    assert_eq!(parse_node_handle("12.#42").unwrap().source_file_id, 42);
+    for bad in [
+        "",
+        "1",
+        "1.2",
+        "-1.#2",
+        "+1.#2",
+        "x.#2",
+        "4294967296.#1",
+        "1.#0",
+        "1.#-2",
+        "1.#18446744073709551616",
+        "12.80./a/b.c.ts",
+    ] {
         assert_eq!(parse_node_handle(bad), None, "{bad}");
     }
     assert_eq!(resolve_node_index(&table, 1_000_000), None);
