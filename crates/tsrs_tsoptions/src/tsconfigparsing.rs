@@ -1650,8 +1650,7 @@ fn parse_config(
         tspath::to_path(config_file_name, &base_path, host.fs().use_case_sensitive_file_names());
     let mut errors: Vec<P<Diagnostic>> = Vec::new();
     if let Some(index) = resolution_stack.iter().position(|path| *path == resolved_path) {
-        let mut cycle =
-            resolution_stack[index..].iter().map(|path| path.as_str()).collect::<Vec<_>>();
+        let mut cycle = resolution_stack[index..].iter().map(Path::as_str).collect::<Vec<_>>();
         cycle.push(resolved_path.as_str());
         errors.push(new_compiler_diagnostic(
             &diagnostics::CIRCULARITY_DETECTED_WHILE_RESOLVING_CONFIGURATION_COLON_0,

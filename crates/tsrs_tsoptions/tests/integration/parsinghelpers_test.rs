@@ -16,9 +16,11 @@ fn cached_typed_lists_and_paths_survive_option_parsing() {
     parse_compiler_options_worker(
         "paths",
         &CompilerOptionsValue::Object(
-            [("x".to_string(), CompilerOptionsValue::StringArray(vec!["./x".to_string()]))]
-                .into_iter()
-                .collect(),
+            std::iter::once((
+                "x".to_string(),
+                CompilerOptionsValue::StringArray(vec!["./x".to_string()]),
+            ))
+            .collect(),
         ),
         &mut options,
     );

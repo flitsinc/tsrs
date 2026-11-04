@@ -892,10 +892,10 @@ impl Parser {
             && node.flags().intersects(NodeFlags::JavaScriptFile)
             && is_common_js_module_indicator(node)
         {
-            if !node.flags().intersects(NodeFlags::JSDoc) {
-                self.common_js_module_indicator = Some(node);
-            } else {
+            if node.flags().intersects(NodeFlags::JSDoc) {
                 self.jsdoc_has_common_js_construct = true;
+            } else {
+                self.common_js_module_indicator = Some(node);
             }
         }
         node

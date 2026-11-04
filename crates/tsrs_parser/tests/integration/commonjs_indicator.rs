@@ -3,6 +3,10 @@ use tsrs_core::{ScriptKind, tspath::Path};
 use tsrs_parser::parse_source_file;
 
 #[test]
+#[expect(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "the upstream table uses fixed lowercase fixture names to choose parsing modes"
+)]
 fn common_js_module_indicator_is_computed_before_binding() {
     for (file_name, source, expected) in [
         ("/a.js", "const x = require(\"x\");", true),

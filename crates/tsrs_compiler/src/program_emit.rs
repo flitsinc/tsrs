@@ -324,7 +324,7 @@ impl Program {
             Some(pool) => {
                 pool.for_each_checker_group_do_in_reverse(&source_files, true, |c, index, file| {
                     print(transform(c, file), index);
-                })
+                });
             }
             None => {
                 for (index, &file) in source_files.iter().enumerate() {

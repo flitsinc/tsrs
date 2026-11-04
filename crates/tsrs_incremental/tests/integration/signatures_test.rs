@@ -283,7 +283,7 @@ fn cached_changed_signature_still_invalidates_global_consumers() {
         false,
     )))
     .get();
-    assert!(incremental_diagnostics(&ctx, program).is_empty());
+    assert_eq!(incremental_diagnostics(&ctx, program), [] as [String; 0]);
     for (a, edit_b) in
         [("export const a = 1; // edit", false), ("export const a = 'changed';", true)]
     {
@@ -311,9 +311,9 @@ fn cached_changed_signature_still_invalidates_global_consumers() {
 
 #[test]
 fn changed_default_library_invalidates_unchanged_consumers() {
+    const LIB_PATH: &str = "/node_modules/@typescript/lib-dom/index.d.ts";
     let ctx = Context::default();
     let config = r#"{"compilerOptions":{"types":[],"strict":true,"noEmit":true,"incremental":true,"lib":["dom"],"libReplacement":true}}"#;
-    const LIB_PATH: &str = "/node_modules/@typescript/lib-dom/index.d.ts";
     let mut texts = BTreeMap::from([
         (LIB_PATH, "interface DOMInterface { value: string; }".to_string()),
         ("/src/a.ts", "export const value: string = ({} as DOMInterface).value;".to_string()),
@@ -328,7 +328,7 @@ fn changed_default_library_invalidates_unchanged_consumers() {
         None,
         false,
     );
-    assert!(incremental_diagnostics(&ctx, old.get()).is_empty());
+    assert_eq!(incremental_diagnostics(&ctx, old.get()), [] as [String; 0]);
     texts.insert(LIB_PATH, "interface DOMInterface { value: number; }".to_string());
     let after = files_of(config, &texts);
     let compiler = compiler_program(&after);
