@@ -13,6 +13,82 @@ fn uri(s: &str) -> lsproto::DocumentUri {
     lsproto::DocumentUri(s.to_string())
 }
 
+#[test]
+fn language_service_snapshot_ref_is_released_after_callback_panic() {
+    let (session, _) = setup(DEFAULT_FILES);
+    let document = uri("file:///home/projects/TS/p1/src/index.ts");
+    session.did_open_file(
+        &ctx(),
+        document.clone(),
+        1,
+        file(DEFAULT_FILES, "/home/projects/TS/p1/src/index.ts"),
+        lsproto::LanguageKind::TYPE_SCRIPT,
+    );
+    let snapshot = session.snapshot();
+    let before = snapshot.ref_count();
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        session.with_language_service_and_snapshot(&ctx(), &document, |_, current| {
+            assert!(Arc::ptr_eq(&snapshot, &current));
+            panic!("callback panic");
+        })
+    }));
+    assert!(outcome.is_err());
+    assert_eq!(snapshot.ref_count(), before, "callback panic leaked a snapshot ref");
+    session.with_language_service_and_snapshot(&ctx(), &document, |_, _| Ok(None)).unwrap();
+    assert_eq!(snapshot.ref_count(), before);
+    assert!(
+        session
+            .with_language_service_and_snapshot(&ctx(), &document, |_, _| {
+                Err(lsproto::Error::new("callback error"))
+            })
+            .is_err()
+    );
+    assert_eq!(snapshot.ref_count(), before);
+}
+
+#[test]
+fn language_service_snapshot_ref_is_owned_by_deferred_work() {
+    let (session, _) = setup(DEFAULT_FILES);
+    let document = uri("file:///home/projects/TS/p1/src/index.ts");
+    session.did_open_file(
+        &ctx(),
+        document.clone(),
+        1,
+        file(DEFAULT_FILES, "/home/projects/TS/p1/src/index.ts"),
+        lsproto::LanguageKind::TYPE_SCRIPT,
+    );
+    let snapshot = session.snapshot();
+    let before = snapshot.ref_count();
+    let during_work = Arc::clone(&snapshot);
+    let work = session
+        .with_language_service_and_snapshot(&ctx(), &document, |_, _| {
+            Ok(Some(Box::new(move || {
+                assert_eq!(during_work.ref_count(), before + 1);
+                Ok(())
+            })))
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(snapshot.ref_count(), before + 1);
+    work().unwrap();
+    assert_eq!(snapshot.ref_count(), before);
+    let abandoned = session
+        .with_language_service_and_snapshot(&ctx(), &document, |_, _| Ok(Some(Box::new(|| Ok(())))))
+        .unwrap()
+        .unwrap();
+    assert_eq!(snapshot.ref_count(), before + 1);
+    drop(abandoned);
+    assert_eq!(snapshot.ref_count(), before, "abandoned deferred work leaked a snapshot ref");
+    let panicking = session
+        .with_language_service_and_snapshot(&ctx(), &document, |_, _| {
+            Ok(Some(Box::new(|| panic!("async work panic"))))
+        })
+        .unwrap()
+        .unwrap();
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(panicking)).is_err());
+    assert_eq!(snapshot.ref_count(), before);
+}
+
 fn ctx() -> Context {
     Context::background()
 }

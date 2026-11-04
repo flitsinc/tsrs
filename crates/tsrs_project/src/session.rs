@@ -1213,18 +1213,13 @@ impl Session {
     ) -> Result<Option<AsyncWork>, lsproto::Error> {
         let (snapshot, _, language_service) =
             self.get_snapshot_and_default_project(ctx, uri, true /*callerRef*/)?;
-        let async_work = f(language_service, Arc::clone(&snapshot));
+        let snapshot_ref = OwnedSnapshotRef(snapshot);
+        let async_work = f(language_service, Arc::clone(&snapshot_ref.0));
         match async_work {
-            Err(err) => {
-                snapshot.deref();
-                Err(err)
-            }
-            Ok(None) => {
-                snapshot.deref();
-                Ok(None)
-            }
+            Err(err) => Err(err),
+            Ok(None) => Ok(None),
             Ok(Some(async_work)) => Ok(Some(Box::new(move || {
-                let _deref = DerefOnDrop(&snapshot);
+                let _snapshot_ref = snapshot_ref;
                 async_work()
             }))),
         }
@@ -2516,6 +2511,16 @@ impl Drop for CancelOnDrop {
 struct DerefOnDrop<'a>(&'a Arc<Snapshot>);
 
 impl Drop for DerefOnDrop<'_> {
+    fn drop(&mut self) {
+        self.0.deref();
+    }
+}
+
+// Own the caller ref before invoking a callback that may unwind. Transferring this guard into deferred work
+// keeps the ref until that work runs or is dropped without being run.
+struct OwnedSnapshotRef(Arc<Snapshot>);
+
+impl Drop for OwnedSnapshotRef {
     fn drop(&mut self) {
         self.0.deref();
     }
