@@ -120,6 +120,7 @@ fn process_changes_save_marks_overlay_as_matching_disk() {
     // First create an overlay
     fs.process_changes(&[open(test_uri1(), 1, "const x = 1;", lsproto::LanguageKind::TYPE_SCRIPT)]);
     // Then save
+    fs.write_file(&test_uri1().file_name(), "const x = 1;").unwrap();
     let (result, _) = fs.process_changes(&[change(FileChangeKind::Save, test_uri1())]);
     // We don't observe saves for snapshot changes,
     // so they're not included in the summary
@@ -178,12 +179,31 @@ fn process_changes_watch_change_on_overlay_marks_as_not_matching_disk() {
     assert!(!fs.get_file(&test_uri1().file_name()).unwrap().matches_disk_text());
 
     // Then save
+    fs.write_file(&test_uri1().file_name(), "const x = 1;").unwrap();
     fs.process_changes(&[change(FileChangeKind::Save, test_uri1())]);
     assert!(fs.get_file(&test_uri1().file_name()).unwrap().matches_disk_text());
 
     // Now process a watch change
+    fs.write_file(&test_uri1().file_name(), "const x = 2;").unwrap();
     fs.process_changes(&[change(FileChangeKind::WatchChange, test_uri1())]);
     assert!(!fs.get_file(&test_uri1().file_name()).unwrap().matches_disk_text());
+}
+
+#[test]
+fn process_changes_save_and_watch_create_compare_overlay_with_disk_in_either_order() {
+    for kinds in [
+        [FileChangeKind::Save, FileChangeKind::WatchCreate],
+        [FileChangeKind::WatchCreate, FileChangeKind::Save],
+    ] {
+        let fs = create_overlay_fs();
+        let overlay = "const value = 'overlay';";
+        fs.process_changes(&[open(test_uri1(), 1, overlay, lsproto::LanguageKind::TYPE_SCRIPT)]);
+        fs.write_file(&test_uri1().file_name(), "const value = 'disk';").unwrap();
+        fs.process_changes(&kinds.map(|kind| change(kind, test_uri1())));
+        let file = fs.get_file(&test_uri1().file_name()).unwrap();
+        assert_eq!(file.content(), overlay);
+        assert!(!file.matches_disk_text());
+    }
 }
 
 // overlayfs_test.go:252 TestProcessChanges/save without overlay should not panic
