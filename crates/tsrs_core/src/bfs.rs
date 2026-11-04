@@ -1,4 +1,3 @@
-use crate::P;
 use crate::collections::{OrderedMap, SyncSet, new_ordered_map_with_size_hint};
 use std::hash::Hash;
 
@@ -13,11 +12,12 @@ pub struct BreadthFirstSearchResult<N> {
 
 struct BreadthFirstSearchJob<N: 'static> {
     node: N,
-    parent: Option<P<BreadthFirstSearchJob<N>>>,
+    parent: Option<usize>,
 }
 
 pub struct BreadthFirstSearchLevel<'a, K, N: 'static> {
-    jobs: &'a mut OrderedMap<K, P<BreadthFirstSearchJob<N>>>,
+    jobs: &'a mut OrderedMap<K, usize>,
+    all_jobs: &'a [BreadthFirstSearchJob<N>],
 }
 
 impl<K: Hash + Eq, N> BreadthFirstSearchLevel<'_, K, N> {
@@ -30,7 +30,7 @@ impl<K: Hash + Eq, N> BreadthFirstSearchLevel<'_, K, N> {
     }
 
     pub fn range(&self, mut f: impl FnMut(&N) -> bool) {
-        self.jobs.values().all(|job| f(&job.node));
+        self.jobs.values().all(|&job| f(&self.all_jobs[job].node));
     }
 }
 
@@ -80,34 +80,38 @@ pub fn breadth_first_search_parallel_ex<K: Hash + Eq + Clone, N: Clone + 'static
     let visited = options.visited.unwrap_or(&own_visited);
     let mut preprocess_level = options.preprocess_level;
 
-    let mut fallback: Option<P<BreadthFirstSearchJob<N>>> = None;
+    let mut fallback: Option<usize> = None;
+    // Indices keep parents valid as the vector grows; every job is dropped when the search returns or unwinds.
+    let mut all_jobs = vec![BreadthFirstSearchJob { node: start, parent: None }];
 
-    let create_path = |job: Option<P<BreadthFirstSearchJob<N>>>| -> Vec<N> {
+    let create_path = |all_jobs: &[BreadthFirstSearchJob<N>], job: Option<usize>| -> Vec<N> {
         let mut path = Vec::new();
-        path.extend(std::iter::successors(job, |j| j.parent).map(|j| j.node.clone()));
+        path.extend(
+            std::iter::successors(job, |&j| all_jobs[j].parent).map(|j| all_jobs[j].node.clone()),
+        );
         path
     };
 
-    let mut level: OrderedMap<K, P<BreadthFirstSearchJob<N>>> = new_ordered_map_with_size_hint(1);
-    level.insert(get_key(&start), P::new(BreadthFirstSearchJob { node: start, parent: None }));
+    let mut level: OrderedMap<K, usize> = new_ordered_map_with_size_hint(1);
+    level.insert(get_key(&all_jobs[0].node), 0);
     while !level.is_empty() {
         // processLevel
         if let Some(pre) = preprocess_level.as_mut() {
-            pre(&mut BreadthFirstSearchLevel { jobs: &mut level });
+            pre(&mut BreadthFirstSearchLevel { jobs: &mut level, all_jobs: &all_jobs });
         }
         let mut lowest_goal: Option<usize> = None;
         let mut lowest_fallback: Option<usize> = None;
-        let mut next: Vec<Vec<P<BreadthFirstSearchJob<N>>>> = Vec::with_capacity(level.len());
+        let mut next: Vec<Vec<usize>> = Vec::with_capacity(level.len());
         for (i, &j) in level.values().enumerate() {
             next.push(Vec::new());
             if lowest_goal.is_some() {
                 break; // Stop processing if we already found a lower result
             }
             // If we have already visited this node, skip it.
-            if !visited.add_if_absent(get_key(&j.node)) {
+            if !visited.add_if_absent(get_key(&all_jobs[j].node)) {
                 continue;
             }
-            let (is_result, stop) = visit(&j.node);
+            let (is_result, stop) = visit(&all_jobs[j].node);
             if is_result {
                 // We found a result, so we will stop at this level, but an
                 // earlier job may still find a true result at a lower index.
@@ -120,11 +124,15 @@ pub fn breadth_first_search_parallel_ex<K: Hash + Eq + Clone, N: Clone + 'static
                 }
             }
             // Add the next level jobs
-            let neighbor_nodes = neighbors(&j.node);
+            let neighbor_nodes = neighbors(&all_jobs[j].node);
             if !neighbor_nodes.is_empty() {
                 next[i] = neighbor_nodes
                     .into_iter()
-                    .map(|child| P::new(BreadthFirstSearchJob { node: child, parent: Some(j) }))
+                    .map(|child| {
+                        let index = all_jobs.len();
+                        all_jobs.push(BreadthFirstSearchJob { node: child, parent: Some(j) });
+                        index
+                    })
                     .collect();
             }
         }
@@ -132,7 +140,10 @@ pub fn breadth_first_search_parallel_ex<K: Hash + Eq + Clone, N: Clone + 'static
         if let Some(index) = lowest_goal {
             // If we found a result, return it immediately.
             let (_, &job) = level.get_index(index).unwrap();
-            return BreadthFirstSearchResult { stopped: true, path: create_path(Some(job)) };
+            return BreadthFirstSearchResult {
+                stopped: true,
+                path: create_path(&all_jobs, Some(job)),
+            };
         }
         if fallback.is_none()
             && let Some(index) = lowest_fallback
@@ -141,15 +152,14 @@ pub fn breadth_first_search_parallel_ex<K: Hash + Eq + Clone, N: Clone + 'static
         }
 
         let count = next.iter().map(std::vec::Vec::len).sum();
-        let mut next_jobs: OrderedMap<K, P<BreadthFirstSearchJob<N>>> =
-            new_ordered_map_with_size_hint(count);
+        let mut next_jobs: OrderedMap<K, usize> = new_ordered_map_with_size_hint(count);
         for jobs in next {
             for j in jobs {
-                let key = get_key(&j.node);
+                let key = get_key(&all_jobs[j].node);
                 next_jobs.entry(key).or_insert(j);
             }
         }
         level = next_jobs;
     }
-    BreadthFirstSearchResult { stopped: false, path: create_path(fallback) }
+    BreadthFirstSearchResult { stopped: false, path: create_path(&all_jobs, fallback) }
 }

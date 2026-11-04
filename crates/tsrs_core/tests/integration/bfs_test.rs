@@ -3,8 +3,48 @@ use tsrs_core::collections::SyncSet;
 use rustc_hash::FxHashMap;
 use tsrs_core::bfs::*;
 
+#[test]
+fn search_jobs_release_their_nodes_after_returning_the_path() {
+    use std::sync::Arc;
+
+    let result = breadth_first_search_parallel(
+        Arc::new(0u8),
+        |node| match **node {
+            0 => vec![Arc::new(1), Arc::new(2)],
+            _ => Vec::new(),
+        },
+        |node| (**node == 1, true),
+    );
+    assert_eq!(result.path.iter().map(Arc::strong_count).collect::<Vec<_>>(), vec![1, 1]);
+}
+
 fn graph(edges: &[(&'static str, &[&'static str])]) -> FxHashMap<&'static str, Vec<&'static str>> {
     edges.iter().map(|(k, v)| (*k, v.to_vec())).collect()
+}
+
+#[test]
+fn preprocessing_keeps_parent_indices_after_deleting_an_earlier_sibling() {
+    let g = graph(&[("A", &["B", "C"]), ("B", &["D"]), ("C", &["D"]), ("D", &[])]);
+    let mut preprocess = |level: &mut BreadthFirstSearchLevel<'_, &'static str, &'static str>| {
+        if level.has(&"B") {
+            level.delete(&"B");
+            let mut remaining = Vec::new();
+            level.range(|node| {
+                remaining.push(*node);
+                true
+            });
+            assert_eq!(remaining, vec!["C"]);
+        }
+    };
+    let result = breadth_first_search_parallel_ex(
+        "A",
+        |node| g[node].clone(),
+        |node| (*node == "D", true),
+        BreadthFirstSearchOptions { visited: None, preprocess_level: Some(&mut preprocess) },
+        |node| *node,
+    );
+    assert!(result.stopped);
+    assert_eq!(result.path, vec!["D", "C", "A"]);
 }
 
 #[test]
