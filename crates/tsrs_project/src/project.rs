@@ -186,8 +186,9 @@ pub struct Project {
 
     pub(crate) host: Option<Arc<CompilerHostImpl>>,
     pub command_line: Option<P<ParsedCommandLine>>,
+    command_line_region: Option<Region>,
     // Go: `commandLineWithTypingsFiles` + `commandLineWithTypingsFilesOnce`.
-    command_line_with_typings_files: Arc<OnceLock<P<ParsedCommandLine>>>,
+    command_line_with_typings_files: Arc<OnceLock<(P<ParsedCommandLine>, Region)>>,
     pub program: Option<&'static Program>,
     // The kind of update that was performed on the program last time it was updated.
     pub program_update_kind: ProgramUpdateKind,
@@ -395,6 +396,7 @@ fn new_project(
         dirty_file_path: Path::default(),
         host: None,
         command_line: None,
+        command_line_region: None,
         command_line_with_typings_files: Arc::new(OnceLock::new()),
         program: None,
         program_update_kind: ProgramUpdateKind::None,
@@ -525,6 +527,7 @@ impl Project {
     //   - potentialProjectReferences, the pre-load placeholder derived from the old
     //     command line (always nil for inferred projects, which have no project references).
     pub(crate) fn set_command_line(&mut self, command_line: Option<P<ParsedCommandLine>>) {
+        self.command_line_region = command_line.and_then(|line| Region::containing(line.addr()));
         self.command_line = command_line;
         self.command_line_with_typings_files = Arc::new(OnceLock::new());
         self.potential_project_references = None;
@@ -546,16 +549,29 @@ impl Project {
         }
 
         let command_line = self.command_line.unwrap();
-        Some(*self.command_line_with_typings_files.get_or_init(|| {
-            // Create an augmented command line that includes typing files
-            let original_root_names = command_line.file_names();
-            let mut new_root_names =
-                Vec::with_capacity(original_root_names.len() + self.typings_files.len());
-            new_root_names.extend(original_root_names.iter().cloned());
-            new_root_names.extend(self.typings_files.iter().cloned());
+        Some(
+            self.command_line_with_typings_files
+                .get_or_init(|| {
+                    // Create an augmented command line that includes typing files
+                    let original_root_names = command_line.file_names();
+                    let mut new_root_names =
+                        Vec::with_capacity(original_root_names.len() + self.typings_files.len());
+                    new_root_names.extend(original_root_names.iter().cloned());
+                    new_root_names.extend(self.typings_files.iter().cloned());
 
-            P::new(command_line.with_file_names(new_root_names))
-        }))
+                    let region = Region::new(4 << 10);
+                    let augmented = {
+                        let _scope = region.enter();
+                        P::new(command_line.with_file_names(new_root_names))
+                    };
+                    if let Some(base) = Region::containing(command_line.addr()) {
+                        region.on_free(Box::new(move || drop(base)));
+                    }
+                    region.trim();
+                    (augmented, region)
+                })
+                .0,
+        )
     }
 
     // project.go:468
@@ -853,11 +869,12 @@ impl Cloneable for Project {
 
             host: self.host.clone(),
             command_line: self.command_line,
+            command_line_region: self.command_line_region.clone(),
             command_line_with_typings_files: {
                 // Go copies the memoized value and starts a fresh sync.Once.
                 let once = OnceLock::new();
                 if let Some(v) = self.command_line_with_typings_files.get() {
-                    let _ = once.set(*v);
+                    let _ = once.set(v.clone());
                 }
                 Arc::new(once)
             },

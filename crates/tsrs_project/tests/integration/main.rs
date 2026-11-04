@@ -2,6 +2,7 @@ mod background {
     mod queue_test;
 }
 mod checkerpool_test;
+mod config_regions_test;
 mod contentmapper_test;
 mod overlayfs_test;
 mod program_regions_test;

@@ -27,6 +27,7 @@ pub struct ProgramOwner {
     region: Region,
     pub(crate) base: Region,
     files: Vec<Region>,
+    _config: Option<Region>,
 }
 
 impl ProgramOwner {
@@ -61,7 +62,8 @@ impl ProgramOwner {
                 base.allocated_bytes() >> 10
             )
         });
-        ProgramOwner { program, checker_pool, region, base, files }
+        let config = Region::containing(program.command_line().addr());
+        ProgramOwner { program, checker_pool, region, base, files, _config: config }
     }
 }
 

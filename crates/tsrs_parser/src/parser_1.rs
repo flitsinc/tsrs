@@ -255,7 +255,12 @@ pub fn parse_source_file(
     source_text: &str,
     script_kind: ScriptKind,
 ) -> P<SourceFile> {
-    parse_source_file_static(opts, alloc_str(source_text), script_kind)
+    let file = parse_source_file_static(opts, alloc_str(source_text), script_kind);
+    if let Some(region) = tsrs_core::arena::current_region() {
+        let text_index = file.text_index.get();
+        region.on_free(Box::new(move || ast::unregister_source_text(text_index)));
+    }
+    file
 }
 
 /// `parse_source_file` for text the caller hands over (a file just read): outside a region it becomes the
@@ -275,12 +280,7 @@ pub fn parse_source_file_owned(
 ) -> P<SourceFile> {
     match tsrs_core::arena::current_region() {
         None => parse_source_file_static(opts, source_text.leak(), script_kind),
-        Some(region) => {
-            let file = parse_source_file(opts, &source_text, script_kind);
-            let text_index = file.text_index.get();
-            region.on_free(Box::new(move || ast::unregister_source_text(text_index)));
-            file
-        }
+        Some(_) => parse_source_file(opts, &source_text, script_kind),
     }
 }
 
@@ -309,12 +309,7 @@ pub fn parse_source_file_embedded(
 ) -> P<SourceFile> {
     match tsrs_core::arena::current_region() {
         None => parse_source_file_static(opts, source_text, script_kind),
-        Some(region) => {
-            let file = parse_source_file(opts, source_text, script_kind);
-            let text_index = file.text_index.get();
-            region.on_free(Box::new(move || ast::unregister_source_text(text_index)));
-            file
-        }
+        Some(_) => parse_source_file(opts, source_text, script_kind),
     }
 }
 

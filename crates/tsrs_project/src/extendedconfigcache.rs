@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use tsrs_core::P;
+use tsrs_core::arena::Region;
 use tsrs_core::tspath::Path;
 use tsrs_tsoptions::{self as tsoptions, ParseConfigHost};
 
@@ -29,6 +30,8 @@ pub struct ExtendedConfigCacheEntry {
     // Go embeds *tsoptions.ExtendedConfigCacheEntry.
     pub(crate) extended_config_cache_entry: P<tsoptions::ExtendedConfigCacheEntry>,
     hash: Hash128,
+    // Root configs and other cached configs can also retain this region after the cache replaces the entry.
+    pub(crate) region: Region,
 }
 
 pub type ExtendedConfigCache =
@@ -38,15 +41,20 @@ pub type ExtendedConfigCache =
 pub(crate) fn new_extended_config_cache() -> ExtendedConfigCache {
     new_owner_cache(
         |path: &Path, args: &ExtendedConfigParseArgs<'_>| {
-            let extended_config_cache_entry = tsoptions::parse_extended_config(
-                &args.file_name,
-                path.clone(),
-                &args.resolution_stack,
-                args.host,
-                Some(args.cache),
-            );
+            let region = Region::new(4 << 10);
+            let extended_config_cache_entry = {
+                let _scope = region.enter();
+                tsoptions::parse_extended_config(
+                    &args.file_name,
+                    path.clone(),
+                    &args.resolution_stack,
+                    args.host,
+                    Some(args.cache),
+                )
+            };
+            region.trim();
             let hash = hash(&extended_config_cache_entry, args);
-            Arc::new(ExtendedConfigCacheEntry { extended_config_cache_entry, hash })
+            Arc::new(ExtendedConfigCacheEntry { extended_config_cache_entry, hash, region })
         },
         Some(Box::new(
             |_path: &Path,

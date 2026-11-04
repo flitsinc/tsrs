@@ -222,10 +222,6 @@ pub fn new_parse_cache(options: RefCountCacheOptions) -> ParseCache {
                 file
             };
             region.trim();
-            let text_index = file.text_index.get();
-            region.on_free(Box::new(move || {
-                tsrs_ast::unregister_source_text(text_index);
-            }));
             parse_regions.lock().unwrap().insert(file.addr(), region);
             file
         });

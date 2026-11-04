@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use tsrs_core::P;
+use tsrs_core::arena::Region;
 use tsrs_core::collections::Set;
 use tsrs_core::tspath::Path;
 use tsrs_tsoptions::ParsedCommandLine;
@@ -64,6 +65,9 @@ pub struct ConfigFileEntry {
     pub(crate) file_name: String,
     pub(crate) pending_reload: PendingReload,
     pub(crate) command_line: Option<P<ParsedCommandLine>>,
+    pub(crate) command_line_region: Option<Region>,
+    // Filename-only reloads share this full parse's AST/options, without retaining intermediate reloads.
+    pub(crate) config_data_region: Option<Region>,
     // retainingProjects is the set of projects that have called acquireConfig
     // without releasing it. A config file entry may be acquired by a project
     // either because it is the config for that project or because it is the
@@ -96,6 +100,8 @@ pub(crate) fn new_config_file_entry(
         file_name: file_name.to_string(),
         pending_reload: PendingReload::Full,
         command_line: None,
+        command_line_region: None,
+        config_data_region: None,
         retaining_projects: None,
         retaining_open_files: None,
         retaining_configs: None,
@@ -119,6 +125,8 @@ pub(crate) fn new_extended_config_file_entry(
         file_name: file_name.to_string(),
         pending_reload: PendingReload::Full,
         command_line: None,
+        command_line_region: None,
+        config_data_region: None,
         retaining_projects: None,
         retaining_open_files: None,
         retaining_configs: Some(retaining_configs),
@@ -133,6 +141,8 @@ impl Cloneable for ConfigFileEntry {
             file_name: self.file_name.clone(),
             pending_reload: self.pending_reload,
             command_line: self.command_line,
+            command_line_region: self.command_line_region.clone(),
+            config_data_region: self.config_data_region.clone(),
             // !!! eagerly cloning these maps makes everything more convenient,
             // but it could be avoided if needed.
             retaining_projects: self.retaining_projects.clone(),

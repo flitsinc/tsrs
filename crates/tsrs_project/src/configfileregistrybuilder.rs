@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use tsrs_core::arena::Region;
 use tsrs_core::collections::Set;
 use tsrs_core::tspath::{self, ComparePathsOptions, Path};
 use tsrs_core::{CompilerOptions, P, Tristate};
@@ -184,12 +185,26 @@ impl ConfigFileRegistryBuilder {
         logger: &LogTree,
     ) -> bool {
         let old_command_line = entry.command_line;
+        // update_extending_configs reads the old command line after the entry has adopted its replacement.
+        let old_region = entry.command_line_region.clone();
         match entry.pending_reload {
             PendingReload::FileNames => {
                 logger.log(&format!("Reloading file names for config: {file_name}"));
-                entry.command_line = Some(P::new(
-                    entry.command_line.unwrap().reload_file_names_of_parsed_command_line(&*self.fs),
-                ));
+                let region = Region::new(4 << 10);
+                entry.command_line = Some({
+                    let _scope = region.enter();
+                    P::new(
+                        entry
+                            .command_line
+                            .unwrap()
+                            .reload_file_names_of_parsed_command_line(&*self.fs),
+                    )
+                });
+                if let Some(base) = entry.config_data_region.clone() {
+                    region.on_free(Box::new(move || drop(base)));
+                }
+                region.trim();
+                entry.command_line_region = Some(region);
             }
             PendingReload::Full => {
                 logger.log(&format!("Loading config file: {file_name}"));
@@ -203,15 +218,22 @@ impl ConfigFileRegistryBuilder {
                 } else {
                     None
                 };
-                let (command_line, _) = tsoptions::get_parsed_command_line_of_config_file_path(
-                    file_name,
-                    path.clone(),
-                    existing_options.as_ref(),
-                    None, /*optionsRaw*/
-                    self,
-                    Some(self as &dyn ExtendedConfigCacheTrait),
-                );
-                entry.command_line = command_line.map(P::new);
+                let region = Region::new(4 << 10);
+                entry.command_line = {
+                    let _scope = region.enter();
+                    let (command_line, _) = tsoptions::get_parsed_command_line_of_config_file_path(
+                        file_name,
+                        path.clone(),
+                        existing_options.as_ref(),
+                        None, /*optionsRaw*/
+                        self,
+                        Some(self as &dyn ExtendedConfigCacheTrait),
+                    );
+                    command_line.map(P::new)
+                };
+                region.trim();
+                entry.command_line_region = entry.command_line.map(|_| region.clone());
+                entry.config_data_region = entry.command_line.map(|_| region.clone());
                 self.update_extending_configs(path, entry.command_line, old_command_line);
                 self.update_root_files_watch(file_name, entry);
                 logger.log("Finished loading config file");
@@ -219,6 +241,7 @@ impl ConfigFileRegistryBuilder {
             PendingReload::None => return false,
         }
         entry.pending_reload = PendingReload::None;
+        drop(old_region);
         old_command_line != entry.command_line
     }
 
@@ -1073,19 +1096,26 @@ impl ExtendedConfigCacheTrait for ConfigFileRegistryBuilder {
             content = fh.content().to_string();
         }
 
-        self.extended_config_cache
-            .load_and_acquire(
-                path,
-                self.snapshot_id,
-                &ExtendedConfigParseArgs {
-                    file_name: file_name.to_string(),
-                    content,
-                    fs: self.fs.source(),
-                    resolution_stack: resolution_stack.to_vec(),
-                    host,
-                    cache: self,
-                },
-            )
-            .extended_config_cache_entry
+        let entry = self.extended_config_cache.load_and_acquire(
+            path,
+            self.snapshot_id,
+            &ExtendedConfigParseArgs {
+                file_name: file_name.to_string(),
+                content,
+                fs: self.fs.source(),
+                resolution_stack: resolution_stack.to_vec(),
+                host,
+                cache: self,
+            },
+        );
+        // Pin this exact generation before releasing the Arc returned by the cache. Another snapshot builder
+        // can replace the cache's value immediately; its owner set only retains the latest generation.
+        let parent = tsrs_core::arena::current_region()
+            .expect("extended config parse has a generation region");
+        if !parent.ptr_eq(&entry.region) {
+            let dependency = entry.region.clone();
+            parent.on_free(Box::new(move || drop(dependency)));
+        }
+        entry.extended_config_cache_entry
     }
 }
