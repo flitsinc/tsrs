@@ -24,7 +24,7 @@ const UPSTREAM_PKG = "packages/typescript";
 const UPSTREAM_NAME = "@typescript/typescript";
 
 // Directories copied verbatim (relative to packages/typescript).
-const VERBATIM_DIRS = ["src", "vendor", "schemas"];
+const VERBATIM_DIRS = ["src", "vendor", "schemas", "enums"];
 // Single files copied verbatim. lib/getExePath.d.ts types tsrs's own lib/getExePath.js, which has the same signature.
 const VERBATIM_FILES = ["tsconfig.base.json", "tsconfig.json", "tsconfig.dev.json", "tsconfig.dist.json", "lib/getExePath.d.ts"];
 // Deliberate tsrs changes to upstream sources, documented in each patch header and in npm/README.md.
@@ -38,6 +38,7 @@ const PATCHES = {
 // except ast.bench.ts, which ast.test.ts imports.
 const TEST_FILES = [
     "test/testUtils.ts",
+    "test/wasm.ts",
     "test/timingDump.test.ts",
     "test/diagnosticFormatter.test.ts",
     "test/encoder.test.ts",
@@ -53,9 +54,12 @@ const TEST_FILES = [
     "test/sync/ast.bench.ts",
     "test/sync/astnav.test.ts",
     "test/sync/shutdown.test.ts",
+    "test/sync/transport.test.ts",
+    "test/sync/wasm.test.ts",
     "test/async/api.testUtils.ts",
     "test/async/api.test.ts",
     "test/async/astnav.test.ts",
+    "test/async/transport.test.ts",
 ];
 
 function parseArgs(argv) {
@@ -173,6 +177,7 @@ function main() {
     const outputs = new Map();
     const patched = {};
     for (const dir of VERBATIM_DIRS) {
+        if (!fs.existsSync(path.join(upstreamDir, dir)) && dir === "enums") continue;
         for (const rel of listFiles(path.join(upstreamDir, dir))) {
             const file = `${dir}/${rel}`;
             let data = fs.readFileSync(path.join(upstreamDir, dir, rel));

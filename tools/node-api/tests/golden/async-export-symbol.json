@@ -7,7 +7,6 @@
   "wire": {
     "name": "exported",
     "flags": 16,
-    "checkFlags": 0,
     "declarations": [
       "3.264./src/index.ts"
     ],

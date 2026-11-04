@@ -6,8 +6,8 @@ Install the beta with `pnpm add -D tsrs@0.21.0-ts7.1.0-beta`. `require("tsrs")` 
 `typescriptCommit`.
 
 The package also ships TypeScript 7's programmatic API, copied from microsoft/TypeScript
-`packages/typescript` under the same subpaths as the `typescript` 7 package. Both the compiler and SDK follow
-`3e9236361fa9` (TypeScript 7.1 beta); [`UPSTREAM.json`](../npm/tsrs/UPSTREAM.json) records the copied SDK revision
+`packages/typescript` under the same subpaths as the `typescript` 7 package. The SDK follows
+`e2bc2bcb838e`; [`UPSTREAM.json`](../npm/tsrs/UPSTREAM.json) records the copied SDK revision
 and adaptations.
 
 | subpath | contents |
@@ -17,6 +17,7 @@ and adaptations.
 | `tsrs/ast` (`/is`, `/factory`, `/utils`, `/scanner`, `/visitor`, `/clone`) | AST types, guards, factory and traversal |
 | `tsrs/fs`, `/proto` | filesystem callbacks/request filesystems, protocol types |
 | `tsrs/path` | strongly typed path constructors and helpers |
+| `tsrs/wasm` | experimental upstream WASI loader and transport; requires the upstream API reactor ABI |
 | `tsrs/vscode` | `createTypeScriptModuleLoader` and upstream editor SDK types; tsrs does not bundle the VS Code extension |
 
 ```js
@@ -71,14 +72,35 @@ throws, later channel requests rethrow that error rather than reading an out-of-
 writes the client snapshot.
 TypeScript consumers need `esnext.disposable` (or a newer lib) for the declarations' `Symbol.dispose` and
 `Symbol.asyncDispose` members. The async `Snapshot`, `Program`, and `BuildOrchestrator` use
-`Symbol.asyncDispose`, so `await using` waits for the returned cleanup Promise. The JS API runs on the package's
-minimum Node (16.20; checked on 16.20, 18, 20, 22 and 24). Where Node lacks the disposal symbols, call
+`Symbol.asyncDispose`, so `await using` waits for the returned cleanup Promise. Starting or connecting to a native
+API server now requires Node 20.16 or later (`process.getBuiltinModule`). Injected transports can run without Node.
+Where the environment lacks the disposal symbols, call
 `close()` / `dispose()` explicitly.
+
+## Catch-up protocol and transports
+
+Project query parameters use numeric lifetime handles (`project.handle`). Logical project IDs (`project.id`)
+remain strings for snapshot operations such as program reconfiguration. A clone keeps its project's handle;
+recreating the same logical ID creates a new handle, and each snapshot resolves only its own handles.
+Node responses carry `index.kind.#sourceFileID.path`; node requests carry `index.#sourceFileID`. The exact source
+file identity prevents a handle from resolving against another AST with the same path and text.
+
+`createFileSystemFromSnapshot(source, extraFileSystem)` reuses an active snapshot's retained request entries.
+The optional extra filesystem is a layer or a full replacement. It copies request entries, tombstones and
+directory listings; host files and editor overlays remain those of the receiving snapshot. The source must stay
+active until the operation completes; the resulting snapshot owns its composed entries independently.
+
+Both APIs accept injected sync/async transports. Their imports and calls do not require Node modules when a
+transport is supplied. The `wasm` SDK export is copied from upstream, but tsrs's Rust WebAssembly artifact still
+exposes its existing CLI ABI. The upstream stateful API reactor (`create_session`, `send_message`,
+`receive_message`, filesystem operations and callback suspension) is not ported. Supporting it would require a
+resumable Rust API execution model for asynchronous and nested callbacks plus WASI/browser parity tests; the
+existing `wasm32-wasip1` build check alone does not demonstrate that support.
 
 ## Implementation and status
 
 Port of the TypeScript 7 native API through the workspace `Cargo.toml` pin
-`3e9236361fa97a9e6c685f4833ac457ae2d8c50a`: server side `tsc/internal/api` + `tsc/internal/ipc`, client
+`e2bc2bcb838e60fd44c02f0b224b8201a4d7ff5b`: server side `tsc/internal/api` + `tsc/internal/ipc`, client
 side `packages/typescript/src/{api,ast}` exported as `sync` and `async`. The wire
 format, method names, params and response schemas follow the ported Go revision; tsrs does not define its own
 protocol or a one-shot CLI wrapper, and it is not compatible with TS5 `createProgram` objects.
@@ -183,7 +205,8 @@ and current directory, reading saved files rather than editor overlays.
   `encoder.EncodeSourceFile`) and
   `set_source_file_id(&mut [u8], u64)`;
 - a per-file node index table (Go `encoder.GetNodeIndexTable`) mapping index <-> node so core can
-  produce/resolve node handles `"<index>.<kind>.<path>"`;
+  produce response handles `"<index>.<kind>.#<source-file-id>.<path>"` and resolve request handles
+  `"<index>.#<source-file-id>"`;
 - `decode_nodes(&[u8])` (Go `encoder.DecodeNodes`) for `printNode` / `formatNodeForInsertion` and
   `createSourceFile` round trips.
 - Positions: the encoder itself writes UTF-16 positions (as the pinned Go encoder does); request positions

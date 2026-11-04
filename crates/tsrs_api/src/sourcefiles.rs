@@ -248,7 +248,7 @@ impl Session {
         let parsed = codec::parse_node_handle(handle)
             .ok_or_else(|| ApiError::client(format!("invalid node handle {handle:?}")))?;
         let file = program
-            .get_source_file_by_path(&tspath::Path::new(parsed.path))
+            .get_source_file_by_node_id(tsrs_ast::NodeId(parsed.source_file_id))
             .ok_or_else(|| ApiError::client(format!("node handle {handle:?} could not be resolved (file may not be loaded or handle may be stale)")))?;
         let table = self.node_index_table(file);
         codec::resolve_node_index(&table, parsed.index)
@@ -446,7 +446,7 @@ impl Session {
 
     pub(crate) fn handle_get_source_file(&self, p: Params) -> ApiResult<Response> {
         let sd = self.snapshot_data(p.u64("snapshot")?)?;
-        let program = sd.get_program(&tsrs_project::ID(p.str("project")?.to_string()))?;
+        let program = sd.get_program(p.u64("project")?)?;
         let file = p.document("file")?;
         let r = self.encode_source_file_response(program.get_source_file(&file.to_file_name()));
         drop(sd);
@@ -455,7 +455,7 @@ impl Session {
 
     pub(crate) fn handle_get_config_source_file(&self, p: Params) -> ApiResult<Response> {
         let sd = self.snapshot_data(p.u64("snapshot")?)?;
-        let program = sd.get_program(&tsrs_project::ID(p.str("project")?.to_string()))?;
+        let program = sd.get_program(p.u64("project")?)?;
         let file = p.document("file")?;
         let command_line = program.command_line();
         let Some(config) = command_line.config_file else {

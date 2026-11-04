@@ -26,6 +26,7 @@
         "lib",
         "schemas",
         "dist",
+        "enums",
         "vendor",
         "UPSTREAM.json",
         "NOTICE.txt"
@@ -57,6 +58,10 @@
         "./fs": {
             "@typescript/source": "./src/api/fs.ts",
             "default": "./dist/api/fs.js"
+        },
+        "./wasm": {
+            "@typescript/source": "./src/wasm/index.ts",
+            "default": "./dist/wasm/index.js"
         },
         "./path": {
             "@typescript/source": "./src/api/typedPaths.ts",
@@ -97,17 +102,5 @@
     },
     "publishConfig": {
         "access": "public"
-    },
-    "imports": {
-        "#getExePath": "./lib/getExePath.js",
-        "#enums/*": {
-            "@typescript/source": {
-                "types": "./src/enums/*.enum.ts",
-                "default": "./src/enums/*.ts"
-            },
-            "types": "./dist/enums/*.enum.d.ts",
-            "default": "./dist/enums/*.js"
-        },
-        "#vscode-jsonrpc/node": "./vendor/vscode-jsonrpc/lib/node/main.js"
     }
 }

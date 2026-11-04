@@ -4,7 +4,6 @@
 use tsrs_core::json::Value;
 use tsrs_core::{ModuleKind, ResolutionMode};
 use tsrs_module::ResolvedTypeReferenceDirective;
-use tsrs_project::ID as ProjectID;
 
 use crate::handler::{ApiError, ApiResult};
 use crate::module_resolution::{package_id_response, resolved_module_response};
@@ -52,7 +51,7 @@ impl Session {
     ) -> ApiResult<(std::sync::Arc<crate::session::SnapshotData>, &'static tsrs_compiler::Program)>
     {
         let sd = self.snapshot_data(p.u64("snapshot")?)?;
-        let program = sd.get_program(&ProjectID(p.str("project")?.to_string()))?;
+        let program = sd.get_program(p.u64("project")?)?;
         Ok((sd, program))
     }
 

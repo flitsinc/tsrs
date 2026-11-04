@@ -22,8 +22,9 @@ fn create_program(s: &tsrs_api::Session, roots: &[String], options: &str) -> (u6
         Value::Number(n) => *n as u64,
         v => panic!("{v:?}"),
     };
-    let id = str_of(get(&r, "operation.createdPrograms.0")).to_string();
+    let id = str_of(get(&r, "operation.createdPrograms.0"));
     assert!(arr(get(&r, "projects")).iter().any(|p| str_of(get(p, "id")) == id));
+    let id = project_handle(&r);
     (snapshot, id)
 }
 
@@ -73,7 +74,7 @@ fn create_snapshot_resolves_paths_relative_to_parsed_config_directory() {
     let names = call(
         &s,
         "getSourceFileNames",
-        &format!(r#"{{"snapshot":{snapshot},"project":{}}}"#, quote(&project)),
+        &format!(r#"{{"snapshot":{snapshot},"project":{project}}}"#),
     );
     assert!(arr(&names).iter().any(|name| str_of(name) == lib));
 }
@@ -99,11 +100,11 @@ fn create_program_reports_non_composite_project_reference_without_config_file() 
         Value::Number(n) => *n as u64,
         value => panic!("{value:?}"),
     };
-    let project = str_of(get(&response, "operation.createdPrograms.0"));
+    let project = project_handle(&response);
     let diagnostics = call(
         &s,
         "getProgramDiagnostics",
-        &format!(r#"{{"snapshot":{snapshot},"project":{}}}"#, quote(project)),
+        &format!(r#"{{"snapshot":{snapshot},"project":{project}}}"#),
     );
     let codes: Vec<&Value> = arr(&diagnostics).iter().map(|d| get(d, "code")).collect();
     assert_eq!(codes, [&Value::Number(6306.0)]);
@@ -131,7 +132,7 @@ fn create_program_diagnostics_emit_release() {
             quote(&dir.path("out"))
         ),
     );
-    let sp = format!("\"snapshot\":{snap},\"project\":{}", quote(&project));
+    let sp = format!("\"snapshot\":{snap},\"project\":{project}");
 
     let names = call(&s, "getSourceFileNames", &format!("{{{sp}}}"));
     assert!(arr(&names).iter().any(|n| str_of(n) == a), "{}", json::marshal(&names).unwrap());
@@ -185,12 +186,9 @@ fn create_program_diagnostics_emit_release() {
             .contains("declare const a: number")
     );
 
-    let e = call_err(
-        &s,
-        "getSemanticDiagnostics",
-        &format!("{{\"snapshot\":{snap},\"project\":\"nope\"}}"),
-    );
-    assert!(e.starts_with("api: client error: project nope not found"), "{e}");
+    let e =
+        call_err(&s, "getSemanticDiagnostics", &format!("{{\"snapshot\":{snap},\"project\":0}}"));
+    assert!(e.starts_with("api: client error: project 0 not found"), "{e}");
     assert_eq!(call(&s, "release", &format!("{{\"snapshot\":{snap}}}")), Value::Bool(true));
     let e = call_err(&s, "getSourceFileNames", &format!("{{{sp}}}"));
     assert_eq!(e, format!("api: client error: snapshot {snap} not found"));
@@ -204,11 +202,7 @@ fn no_emit_option_skips_emit() {
     let a = dir.write("a.ts", "export const a = 1;\n");
     let s = session(&dir.dir(), false);
     let (snap, project) = create_program(&s, &[a], "{\"noEmit\":true}");
-    let out = call(
-        &s,
-        "emitToString",
-        &format!("{{\"snapshot\":{snap},\"project\":{}}}", quote(&project)),
-    );
+    let out = call(&s, "emitToString", &format!("{{\"snapshot\":{snap},\"project\":{project}}}"));
     // Go HandleNoEmitOptions: whole-program noEmit returns an empty, non-skipped result.
     assert_eq!(get(&out, "emitSkipped"), &Value::Bool(false));
     assert_eq!(arr(get(&out, "outputFiles")).len(), 0);
@@ -217,11 +211,7 @@ fn no_emit_option_skips_emit() {
     let js = call(
         &s,
         "getJavaScriptEmit",
-        &format!(
-            "{{\"snapshot\":{snap},\"project\":{},\"files\":[{}]}}",
-            quote(&project),
-            quote(&a)
-        ),
+        &format!("{{\"snapshot\":{snap},\"project\":{},\"files\":[{}]}}", project, quote(&a)),
     );
     assert_eq!(arr(get(&js, "outputFiles")).len(), 1);
 }
@@ -240,8 +230,9 @@ fn configured_project_update_and_retained_old_snapshot() {
         Value::Number(n) => *n as u64,
         _ => unreachable!(),
     };
-    let project = str_of(get(&r, "projects.0.id")).to_string();
+    let project = project_handle(&r);
     assert_eq!(str_of(get(&r, "projects.0.configFileName")), cfg);
+    let project_id = str_of(get(&r, "projects.0.id"));
     assert_eq!(get(&r, "projects.0.parsedCommandLine.options.strict"), &Value::Bool(true));
     assert!(
         matches!(get(&r, "projects.0"), Value::Object(o) if !o.contains_key("rootFiles") && !o.contains_key("compilerOptions"))
@@ -252,8 +243,8 @@ fn configured_project_update_and_retained_old_snapshot() {
         "getDefaultProjectForFile",
         &format!("{{\"snapshot\":{snap1},\"file\":{}}}", quote(&a)),
     );
-    assert_eq!(str_of(get(&dp, "id")), project);
-    let sp1 = format!("\"snapshot\":{snap1},\"project\":{}", quote(&project));
+    assert_eq!(json::marshal(get(&dp, "handle")).unwrap(), project);
+    let sp1 = format!("\"snapshot\":{snap1},\"project\":{project}");
     assert_eq!(call(&s, "getSemanticDiagnostics", &format!("{{{sp1}}}")), Value::Array(vec![]));
 
     // Change the file on disk and notify; the old snapshot stays valid and unchanged.
@@ -272,11 +263,11 @@ fn configured_project_update_and_retained_old_snapshot() {
     };
     assert_ne!(snap1, snap2);
     let changed = match get(&r2, "changes.changedProjects") {
-        Value::Object(o) => get(o.get(&project).expect("project changes"), "changedFiles"),
+        Value::Object(o) => get(o.get(project_id).expect("project changes"), "changedFiles"),
         v => panic!("{v:?}"),
     };
     assert_eq!(arr(changed).len(), 1);
-    let sp2 = format!("\"snapshot\":{snap2},\"project\":{}", quote(&project));
+    let sp2 = format!("\"snapshot\":{snap2},\"project\":{project}");
     assert_eq!(arr(&call(&s, "getSemanticDiagnostics", &format!("{{{sp2}}}"))).len(), 1);
     assert_eq!(call(&s, "getSemanticDiagnostics", &format!("{{{sp1}}}")), Value::Array(vec![]));
 
@@ -318,7 +309,8 @@ fn malformed_snapshot_params_are_bounded_errors() {
         "createSnapshot",
         r#"{"createPrograms":[{"rootFiles":[],"compilerOptions":{"target":"es5"}}]}"#,
     );
-    assert!(e.starts_with("api: invalid request"), "{e}");
+    // RawCompilerOptions accepts the JSON string, then Go's enum conversion panics during Finalize.
+    assert!(e.starts_with("panic: interface conversion:"), "{e}");
     let e = call_err(
         &s,
         "createSnapshot",
@@ -351,7 +343,7 @@ fn remaining_diagnostic_kinds_and_declaration_emit() {
         std::slice::from_ref(&a),
         "{\"declaration\":true,\"isolatedDeclarations\":true}",
     );
-    let sp = format!("\"snapshot\":{snap},\"project\":{}", quote(&project));
+    let sp = format!("\"snapshot\":{snap},\"project\":{project}");
     let bind = call(&s, "getBindDiagnostics", &format!("{{{sp},\"files\":[{}]}}", quote(&a)));
     assert!(
         arr(&bind).iter().any(|d| get(d, "code") == &Value::Number(2451.0)),
@@ -396,11 +388,11 @@ fn config_file_parsing_diagnostics_round_trip() {
         Value::Number(n) => *n as u64,
         _ => unreachable!(),
     };
-    let project = str_of(get(&r, "operation.createdPrograms.0")).to_string();
+    let project = project_handle(&r);
     let d = call(
         &s,
         "getConfigFileParsingDiagnostics",
-        &format!("{{\"snapshot\":{snap},\"project\":{}}}", quote(&project)),
+        &format!("{{\"snapshot\":{snap},\"project\":{project}}}"),
     );
     assert_eq!(get(&d, "0.code"), &Value::Number(5023.0));
     assert_eq!(str_of(get(&d, "0.text")), "Unknown compiler option 'x'.");
@@ -433,7 +425,7 @@ fn open_projects_with_circular_extends_report_circularity() {
         &format!(
             r#"{{"snapshot":{},"project":{}}}"#,
             json::marshal(snapshot).unwrap(),
-            quote(str_of(get(project, "id")))
+            json::marshal(get(project, "handle")).unwrap()
         ),
     );
     let codes: Vec<Value> =
@@ -453,8 +445,8 @@ fn config_file_names_and_source_file_metadata() {
         Value::Number(n) => *n as u64,
         _ => unreachable!(),
     };
-    let project = str_of(get(&r, "projects.0.id")).to_string();
-    let sp = format!("\"snapshot\":{snap},\"project\":{}", quote(&project));
+    let project = project_handle(&r);
+    let sp = format!("\"snapshot\":{snap},\"project\":{project}");
     let names = call(&s, "getConfigFileNames", &format!("{{{sp}}}"));
     assert_eq!(names, Value::Array(vec![Value::String(cfg), Value::String(base)]));
     let m = call(&s, "getSourceFileMetadata", &format!("{{{sp},\"file\":{}}}", quote(&a)));
@@ -480,11 +472,7 @@ fn config_file_names_and_source_file_metadata() {
     // Synthetic programs have no config file.
     let (snap2, p2) = create_program(&s, &[a], "{}");
     assert_eq!(
-        call(
-            &s,
-            "getConfigFileNames",
-            &format!("{{\"snapshot\":{snap2},\"project\":{}}}", quote(&p2))
-        ),
+        call(&s, "getConfigFileNames", &format!("{{\"snapshot\":{snap2},\"project\":{p2}}}")),
         Value::Array(vec![])
     );
 }
@@ -499,7 +487,7 @@ fn no_emit_on_error_reports_diagnostics_without_output() {
         &[a],
         &format!("{{\"noEmitOnError\":true,\"outDir\":{}}}", quote(&dir.path("out"))),
     );
-    let sp = format!("\"snapshot\":{snap},\"project\":{}", quote(&project));
+    let sp = format!("\"snapshot\":{snap},\"project\":{project}");
     let out = call(&s, "emit", &format!("{{{sp}}}"));
     assert_eq!(get(&out, "emitSkipped"), &Value::Bool(true));
     assert_eq!(get(&out, "diagnostics.0.code"), &Value::Number(2322.0));

@@ -14,7 +14,7 @@ use tsrs_core::P;
 use tsrs_core::context::{CheckerLifetime, Context, with_checker_lifetime};
 use tsrs_core::json::Value;
 use tsrs_ls::autoimport::ProjectID as LsProjectID;
-use tsrs_project::Snapshot;
+use tsrs_project::{Handle, Snapshot};
 
 use super::host::{CheckerError, CheckerErrorKind, CheckerHost, CheckerResult};
 use super::json::obj;
@@ -25,10 +25,10 @@ fn snapshot_ctx<'h>(host: &'h dyn CheckerHost, p: &Params) -> CheckerResult<Snap
     SnapshotCtx::new(host, p.u64("snapshot")?, p.project()?)
 }
 
-fn program_of(snapshot: &Snapshot, project: &str) -> CheckerResult<&'static Program> {
+fn program_of(snapshot: &Snapshot, project: Handle) -> CheckerResult<&'static Program> {
     let proj = snapshot
         .project_collection
-        .get_project(&tsrs_project::ID(project.to_string()))
+        .get_project_by_handle(project)
         .ok_or_else(|| CheckerError::client(format!("project {project} not found")))?;
     proj.get_program().ok_or_else(|| CheckerError::client("project has no program"))
 }
@@ -37,21 +37,22 @@ fn program_of(snapshot: &Snapshot, project: &str) -> CheckerResult<&'static Prog
 fn language_service(
     snapshot: &Arc<Snapshot>,
     program: &'static Program,
-    project: &str,
+    project: Handle,
     active_file: &str,
 ) -> CheckerResult<tsrs_ls::LanguageService> {
-    if snapshot.project_collection.get_project(&tsrs_project::ID(project.to_string())).is_none() {
-        return Err(CheckerError::client(format!("project {project} not found")));
-    }
+    let proj = snapshot
+        .project_collection
+        .get_project_by_handle(project)
+        .ok_or_else(|| CheckerError::client(format!("project {project} not found")))?;
     let host: Arc<dyn tsrs_ls::Host> = Arc::<Snapshot>::clone(snapshot);
-    Ok(tsrs_ls::new_language_service(LsProjectID(project.to_string()), program, host, active_file))
+    Ok(tsrs_ls::new_language_service(LsProjectID(proj.id().0), program, host, active_file))
 }
 
 pub fn get_signature_usages(host: &dyn CheckerHost, p: &Params) -> CheckerResult<Value> {
     let sd = snapshot_ctx(host, p)?;
     let program = sd.program()?;
     let decl = host.resolve_node_handle(program, p.string("signatureDecl")?)?;
-    let ls = language_service(&sd.scope.snapshot, program, &sd.project, "")?;
+    let ls = language_service(&sd.scope.snapshot, program, sd.project, "")?;
     let usages = ls.get_signature_usages(&host.context(), decl);
     if usages.is_empty() {
         return Ok(Value::Array(Vec::new())); // Go nil slice: json/v2 encodes []
@@ -75,7 +76,7 @@ pub fn get_referenced_symbols_for_node(host: &dyn CheckerHost, p: &Params) -> Ch
     let program = sd.program()?;
     let node = host.resolve_node_handle(program, p.string("node")?)?;
     let position = p.u32("position")?;
-    let ls = language_service(&sd.scope.snapshot, program, &sd.project, "")?;
+    let ls = language_service(&sd.scope.snapshot, program, sd.project, "")?;
     let entries = ls.get_referenced_symbols_for_node_exported(
         &host.context(),
         position,
@@ -101,7 +102,7 @@ pub fn get_referenced_symbols_for_node(host: &dyn CheckerHost, p: &Params) -> Ch
         let mut o = obj();
         o.set("definition", Value::String(host.node_handle(def)?));
         if let Some(sym) = entry.definition_symbol() {
-            o.set("symbol", sd.symbol_response(sym, &sd.project)?);
+            o.set("symbol", sd.symbol_response(sym, sd.project)?);
         }
         o.set("references", Value::Array(refs));
         out.push(o.build());
@@ -137,7 +138,7 @@ pub fn get_completions_at_position(host: &dyn CheckerHost, p: &Params) -> Checke
         let Some(source_file) = program.get_source_file(&file_name) else {
             return Ok(Ok(None));
         };
-        let ls = language_service(snapshot, program, &sd.project, source_file.file_name())?;
+        let ls = language_service(snapshot, program, sd.project, source_file.file_name())?;
         let internal = source_file.get_position_map().utf16_to_utf8(position);
         // With includeSymbol the language service takes the API checker itself (Go: same).
         let _lease = if include_symbol { Some(super::lease::acquire(program)?) } else { None };
@@ -161,7 +162,7 @@ pub fn get_completions_at_position(host: &dyn CheckerHost, p: &Params) -> Checke
             host.clone_snapshot_with_auto_imports(&sd.scope.snapshot, source_file.file_name())?;
         host.try_adopt_snapshot_in_background(&sd.scope.snapshot, &snapshot);
         let outcome =
-            program_of(&snapshot, &sd.project).and_then(|program| run(&snapshot, program, &ctx));
+            program_of(&snapshot, sd.project).and_then(|program| run(&snapshot, program, &ctx));
         prepared = Some(snapshot);
         result = match outcome {
             Ok(r) => r,
@@ -222,7 +223,7 @@ pub fn get_completions_at_position(host: &dyn CheckerHost, p: &Params) -> Checke
         }
         if let Some(symbol) = item.symbol {
             uses_prepared_symbols |= prepared.is_some();
-            o.set("symbol", sd.symbol_response(symbol, &sd.project)?);
+            o.set("symbol", sd.symbol_response(symbol, sd.project)?);
         }
         entries.push(o.build());
     }
@@ -266,7 +267,13 @@ pub fn get_import_adder_edits(host: &dyn CheckerHost, p: &Params) -> CheckerResu
     let mut source_file = program.get_source_file(&file_name).ok_or_else(|| {
         CheckerError::client(format!("source file not found: {}", file.display()))
     })?;
-    let project_id = LsProjectID(sd.project.clone());
+    let project = sd
+        .scope
+        .snapshot
+        .project_collection
+        .get_project_by_handle(sd.project)
+        .ok_or_else(|| CheckerError::client(format!("project {} not found", sd.project)))?;
+    let project_id = LsProjectID(project.id().0);
 
     let mut actions: Vec<Action> = Vec::new();
     actions = (p.array("actions")?).iter().try_fold(actions, |mut actions, action| {
@@ -333,7 +340,7 @@ pub fn get_import_adder_edits(host: &dyn CheckerHost, p: &Params) -> CheckerResu
         host.try_adopt_snapshot_in_background(&working, &snapshot);
         prepared = Some(Arc::clone(&snapshot));
         working = snapshot;
-        let resolved = program_of(&working, &sd.project).and_then(|prog| {
+        let resolved = program_of(&working, sd.project).and_then(|prog| {
             let sf = prog.get_source_file(&file_name).ok_or_else(|| {
                 CheckerError::client(format!("source file not found: {}", file.display()))
             })?;

@@ -1,0 +1,17 @@
+{"q":"t/main.ts getTypeAtLocation @empty([","r":{"flags":1048576,"id":91,"isTupleType":true,"objectFlags":2244620,"target":89}}
+{"q":"t/main.ts getTypeAtLocation @empty([ target","r":{"fixedLength":0,"flags":1048576,"id":89,"isTupleType":true,"objectFlags":12,"readonly":false,"target":89}}
+{"q":"t/main.ts getTypeAtLocation @nonempty([","r":{"flags":1048576,"id":110,"isTupleType":true,"objectFlags":2244612,"target":107}}
+{"q":"t/main.ts getTypeAtLocation @nonempty([ target","r":{"elementFlags":[1],"fixedLength":1,"flags":1048576,"id":107,"isTupleType":true,"objectFlags":12,"readonly":false,"target":107}}
+{"q":"t/main.ts getTypeAtLocation @array([","r":{"flags":1048576,"id":119,"objectFlags":136462340,"symbol":{"id":281474976722160},"target":65}}
+{"q":"t/main.ts getTypeAtLocation @array([ target","r":{"flags":1048576,"id":65,"localTypeParameters":[66],"objectFlags":6,"symbol":{"id":281474976722160},"target":65,"thisType":67,"typeParameters":[66]}}
+{"q":"m/models.ts getTypeFromTypeNode @Boxed = ","r":{"aliasSymbol":{"file":"173119","id":281474976722761},"flags":1048576,"id":89,"objectFlags":4,"symbol":{"file":"173119","id":281474976722759},"target":86}}
+{"q":"m/models.ts getTypeFromTypeNode @Boxed =  target","r":{"flags":1048576,"id":86,"localTypeParameters":[87],"objectFlags":6,"symbol":{"file":"173119","id":281474976722759},"target":86,"thisType":88,"typeParameters":[87]}}
+{"q":"m/models.ts getTypeFromTypeNode @TupleAlias = ","r":{"aliasSymbol":{"file":"173119","id":281474976722762},"flags":1048576,"id":94,"isTupleType":true,"objectFlags":4,"target":92}}
+{"q":"m/models.ts getTypeFromTypeNode @TupleAlias =  target","r":{"elementFlags":[1,4],"fixedLength":1,"flags":1048576,"id":92,"isTupleType":true,"objectFlags":12,"readonly":true,"target":92}}
+{"q":"m/models.ts getTypeFromTypeNode @ArrayAlias = ","r":{"aliasSymbol":{"file":"173119","id":281474976722763},"flags":1048576,"id":95,"objectFlags":4,"symbol":{"id":281474976722751},"target":65}}
+{"q":"m/models.ts getTypeFromTypeNode @ArrayAlias =  target","r":{"flags":1048576,"id":65,"localTypeParameters":[66],"objectFlags":6,"symbol":{"id":281474976722751},"target":65,"thisType":67,"typeParameters":[66]}}
+{"q":"m/models.ts getTypeFromTypeNode @EmptyTuple = ","r":{"fixedLength":0,"flags":1048576,"id":96,"isTupleType":true,"objectFlags":12,"readonly":false,"target":96}}
+{"q":"m/models.ts getTypeFromTypeNode @EmptyTuple =  target","r":{"fixedLength":0,"flags":1048576,"id":96,"isTupleType":true,"objectFlags":12,"readonly":false,"target":96}}
+{"q":"m/models.ts getTypeFromTypeNode @Union = ","r":{"aliasSymbol":{"file":"173119","id":281474976722765},"flags":134217728,"id":100}}
+{"q":"m/models.ts getTypeFromTypeNode @Boxed = ","r":{"aliasSymbol":{"file":"173119","id":281474976722761},"flags":1048576,"id":89,"objectFlags":2097156,"symbol":{"file":"173119","id":281474976722759},"target":86}}
+{"q":"m/models.ts getTypeFromTypeNode @Boxed =  target","r":{"flags":1048576,"id":86,"localTypeParameters":[87],"objectFlags":6,"symbol":{"file":"173119","id":281474976722759},"target":86,"thisType":88,"typeParameters":[87]}}

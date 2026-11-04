@@ -72,9 +72,16 @@ impl Ctl {
 impl H {
     fn program(&self, which: &str) -> &'static tsrs_compiler::Program {
         let sd = self.s.session.snapshot_data(self.s.snapshot as u64).unwrap();
-        let project =
-            if which == "q" { "/q/tsconfig.json".to_string() } else { self.s.project.clone() };
-        sd.get_program(&tsrs_project::ID(project)).unwrap()
+        let project = if which == "q" {
+            sd.snapshot
+                .project_collection
+                .get_project(&tsrs_project::ID("/q/tsconfig.json".to_string()))
+                .unwrap()
+                .handle()
+        } else {
+            self.s.project as u64
+        };
+        sd.get_program(project).unwrap()
     }
 
     fn acquire(&self, which: &str) -> Result<lease::ApiCheckerLease, transport::ApiError> {
@@ -495,7 +502,7 @@ fn sync_genuine_reentry_fails_immediately_and_lease_free_requests_proceed() {
 fn gate_entries_are_dropped_once_unused() {
     let s = session_with(&[], &["/p/tsconfig.json"]);
     let sd = s.session.snapshot_data(s.snapshot as u64).unwrap();
-    let program = sd.get_program(&tsrs_project::ID(s.project)).unwrap();
+    let program = sd.get_program(s.project as u64).unwrap();
     drop(lease::acquire(program).unwrap());
     assert!(!lease::is_tracked(program));
 }
@@ -506,7 +513,7 @@ fn sync_nested_request_reads_its_own_exact_uint64_literals() {
     // are still current; it must look up its own exact values.
     bounded("sync nested exact ids", Duration::from_secs(60), || {
         let s = session_with(&[], &["/p/tsconfig.json"]);
-        let project = s.project.clone();
+        let project = s.project;
         let late = transport::LateCaller::new();
         let (server_r, client_w) = std::io::pipe().unwrap();
         let (client_r, server_w) = std::io::pipe().unwrap();
@@ -532,8 +539,7 @@ fn sync_nested_request_reads_its_own_exact_uint64_literals() {
         w.write_tuple(MessageType::Request, b"cbOnly", b"").unwrap();
         assert_eq!(recv().0, MessageType::Call);
         let nested = format!(
-            r#"{{"snapshot":9007199254740993,"project":{},"file":"/p/main.ts","position":0}}"#,
-            json::marshal_string(&project)
+            r#"{{"snapshot":9007199254740993,"project":{project},"file":"/p/main.ts","position":0}}"#
         );
         w.write_tuple(MessageType::Request, b"getTypeAtPosition", nested.as_bytes()).unwrap();
         assert_eq!(

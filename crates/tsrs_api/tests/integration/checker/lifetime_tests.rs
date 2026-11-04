@@ -214,16 +214,16 @@ fn run_stress(rounds: usize, fanout: usize) -> Counts {
             Value::Array(a) => a[0].clone(),
             other => panic!("{other:?}"),
         },
-        "id",
+        "handle",
     ) {
-        Value::String(p) => p,
+        Value::Number(p) => p,
         other => panic!("{other:?}"),
     };
     let use_pos = B.find("use =").unwrap();
     let all_pos = B.find("all =").unwrap();
     for k in 0..rounds {
         let expected = if k % 2 == 0 { NUMBER } else { STRING };
-        let sp = format!(r#""snapshot":{snap},"project":{}"#, q(&project));
+        let sp = format!(r#""snapshot":{snap},"project":{project}"#);
         // Handles obtained from S_k before the race.
         let t = c.call(
             "getTypeAtPosition",
@@ -333,7 +333,7 @@ fn run_stress(rounds: usize, fanout: usize) -> Counts {
         snap = next;
         // The old symbol reference names a.ts/b.ts files: b.ts is unchanged, so a file-owned reference
         // may still resolve in S_{k+1} (pinned Go behaves the same); it must answer the *new* type.
-        let sp2 = format!(r#""snapshot":{snap},"project":{}"#, q(&project));
+        let sp2 = format!(r#""snapshot":{snap},"project":{project}"#);
         let id = c.send("getTypeOfSymbol", &format!(r#"{{{sp2},"symbol":{sym_ref}}}"#));
         let v = c.wait(&id);
         let next_expected = if k % 2 == 0 { STRING } else { NUMBER };
@@ -383,19 +383,16 @@ fn released_snapshot_checker_memory_is_poisoned() {
     );
     let Value::Number(snap) = get(&r, "snapshot") else { panic!() };
     let Value::Array(projects) = get(&r, "projects") else { panic!() };
-    let Value::String(project) = get(&projects[0], "id") else { panic!() };
+    let Value::Number(project) = get(&projects[0], "handle") else { panic!() };
     let pos = B.find("all =").unwrap();
     let t = call(
         "getTypeAtPosition",
-        format!(
-            r#"{{"snapshot":{snap},"project":{},"file":"/p/b.ts","position":{pos}}}"#,
-            q(&project)
-        ),
+        format!(r#"{{"snapshot":{snap},"project":{project},"file":"/p/b.ts","position":{pos}}}"#),
     );
     let Value::Number(id) = get(&t, "id") else { panic!() };
     let (flags, before) = {
         let sd = session.snapshot_data(snap as u64).unwrap();
-        let ty = sd.checker_state.registry.resolve_type(&project, id as u32, None).unwrap();
+        let ty = sd.checker_state.registry.resolve_type(project as u64, id as u32, None).unwrap();
         (ty.flags.as_ptr().cast::<u32>(), ty.flags.get().bits())
     };
     let poison_word = u32::from_ne_bytes([0xA5; 4]);

@@ -177,9 +177,9 @@ impl<'a> Params<'a> {
             .collect()
     }
 
-    /// Go `project.ID` (a string; missing → "").
-    pub(crate) fn project(&self) -> CheckerResult<&'a str> {
-        self.string("project")
+    /// Go `project.Handle` (a uint64; missing → 0).
+    pub(crate) fn project(&self) -> CheckerResult<tsrs_project::Handle> {
+        self.u64_typed("project", "project.Handle")
     }
 
     /// Go `DocumentIdentifier` field: a missing field is the zero value (empty file name), but an
@@ -297,7 +297,7 @@ pub struct SymbolReference<'a> {
     pub(crate) kind: u32,
     pub(crate) file: Option<&'a Value>,
     pub(crate) snapshot: u64,
-    pub(crate) project: &'a str,
+    pub(crate) project: tsrs_project::Handle,
     pub(crate) id: u64,
 }
 
@@ -321,7 +321,7 @@ impl<'a> SymbolReference<'a> {
             kind: p.u32("kind")?,
             file,
             snapshot: p.u64_typed("snapshot", "api.SnapshotID")?,
-            project: p.string("project")?,
+            project: p.project()?,
             id: p.u64_typed("id", "api.SymbolID")?,
         })
     }

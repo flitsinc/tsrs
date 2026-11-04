@@ -27,7 +27,7 @@ fn create_program(s: &tsrs_api::Session, roots: &[String], options: &str) -> (u6
         Value::Number(n) => *n as u64,
         v => panic!("{v:?}"),
     };
-    (snapshot, str_of(get(&r, "operation.createdPrograms.0")).to_string())
+    (snapshot, project_handle(&r))
 }
 
 /// Program, checker and emit allocations are owned by the snapshot's regions: creating, checking, emitting
@@ -45,7 +45,7 @@ fn released_snapshots_free_program_and_emit_memory() {
     let round = |s: &tsrs_api::Session| {
         let (snap, project) =
             create_program(s, std::slice::from_ref(&a), "{\"declaration\":true,\"noLib\":true}");
-        let sp = format!("\"snapshot\":{snap},\"project\":{}", quote(&project));
+        let sp = format!("\"snapshot\":{snap},\"project\":{project}");
         call(s, "getSemanticDiagnostics", &format!("{{{sp}}}"));
         let out = call(s, "emitToString", &format!("{{{sp}}}"));
         assert_eq!(arr(get(&out, "outputFiles")).len(), 2);
@@ -180,11 +180,7 @@ fn failed_program_builds_release_their_files() {
     let sf = call(
         &s,
         "getSourceFile",
-        &format!(
-            r#"{{"snapshot":{keep},"project":{},"file":{}}}"#,
-            quote(&keep_project),
-            quote(&a)
-        ),
+        &format!(r#"{{"snapshot":{keep},"project":{},"file":{}}}"#, keep_project, quote(&a)),
     );
     assert!(!matches!(sf, Value::Null));
     let (next, _) = create_program(&s, std::slice::from_ref(&a), "{\"noLib\":true}");

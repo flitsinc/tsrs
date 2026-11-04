@@ -8,7 +8,7 @@ use tsrs_core::P;
 use tsrs_core::context::{CheckerLifetime, with_checker_lifetime};
 use tsrs_core::json::Value;
 use tsrs_core::tspath::Path;
-use tsrs_project::ID;
+use tsrs_project::Handle;
 
 use super::host::{CheckerError, CheckerHost, CheckerResult, SnapshotScope};
 use super::json::Obj;
@@ -22,24 +22,24 @@ use super::symbol_index::source_file_symbol;
 pub(crate) struct SnapshotCtx<'h> {
     host: &'h dyn CheckerHost,
     pub(crate) scope: SnapshotScope,
-    pub(crate) project: String,
+    pub(crate) project: Handle,
 }
 
 impl<'h> SnapshotCtx<'h> {
     pub(crate) fn new(
         host: &'h dyn CheckerHost,
         snapshot: u64,
-        project: &str,
+        project: Handle,
     ) -> CheckerResult<SnapshotCtx<'h>> {
         let scope = host.snapshot(snapshot)?;
-        Ok(SnapshotCtx { host, scope, project: project.to_string() })
+        Ok(SnapshotCtx { host, scope, project })
     }
 
     /// Go `snapshotData.newSymbolResponse(symbol, canonicalProject)`.
     pub(crate) fn symbol_response(
         &self,
         symbol: P<Symbol>,
-        canonical_project: &str,
+        canonical_project: Handle,
     ) -> CheckerResult<Value> {
         if symbol_owner_file(symbol).is_some() {
             return file_symbol_response(self.host, symbol);
@@ -48,7 +48,7 @@ impl<'h> SnapshotCtx<'h> {
         let mut reference = Obj::new();
         reference.num("kind", SYMBOL_OWNER_KIND_SNAPSHOT as f64);
         reference.num("snapshot", self.scope.handle as f64);
-        reference.str_nonempty("project", &project);
+        reference.num("project", project as f64);
         reference.num("id", id as f64);
         build_symbol_response(self.host, symbol, reference.build())
     }
@@ -59,10 +59,10 @@ impl<'h> SnapshotCtx<'h> {
         checker_id: u32,
         sig: P<Signature>,
     ) -> CheckerResult<Value> {
-        let id = self.scope.registry.register_signature(&self.project, checker_id, sig)?;
+        let id = self.scope.registry.register_signature(self.project, checker_id, sig)?;
         let mut o = Obj::new();
         o.num("id", id as f64);
-        o.num("flags", sig.flags().bits() as f64);
+        o.nonzero("flags", sig.flags().bits() as f64);
         if let Some(decl) = sig.declaration() {
             o.str_nonempty("declaration", &self.host.node_handle(decl)?);
         }
@@ -88,7 +88,7 @@ impl<'h> SnapshotCtx<'h> {
     }
 
     pub(crate) fn resolve_type(&self, id: u32, checker_id: Option<u32>) -> CheckerResult<P<Type>> {
-        self.scope.registry.resolve_type(&self.project, id, checker_id)
+        self.scope.registry.resolve_type(self.project, id, checker_id)
     }
 
     pub(crate) fn resolve_signature(
@@ -96,21 +96,19 @@ impl<'h> SnapshotCtx<'h> {
         id: u64,
         checker_id: Option<u32>,
     ) -> CheckerResult<P<Signature>> {
-        self.scope.registry.resolve_signature(&self.project, id, checker_id)
+        self.scope.registry.resolve_signature(self.project, id, checker_id)
     }
 
     /// The API checker that produced the project's registered handles (for responses built without one).
     pub(crate) fn registered_checker_id(&self) -> u32 {
-        self.scope.registry.project_checker_id(&self.project)
+        self.scope.registry.project_checker_id(self.project)
     }
 
     pub(crate) fn program(&self) -> CheckerResult<&'static Program> {
-        let project = self
-            .scope
-            .snapshot
-            .project_collection
-            .get_project(&ID(self.project.clone()))
-            .ok_or_else(|| CheckerError::client(format!("project {} not found", self.project)))?;
+        let project =
+            self.scope.snapshot.project_collection.get_project_by_handle(self.project).ok_or_else(
+                || CheckerError::client(format!("project {} not found", self.project)),
+            )?;
         project.get_program().ok_or_else(|| CheckerError::client("project has no program"))
     }
 }
@@ -132,7 +130,7 @@ impl<'h> Setup<'h> {
     pub(crate) fn new(
         host: &'h dyn CheckerHost,
         snapshot: u64,
-        project: &str,
+        project: Handle,
     ) -> CheckerResult<Setup<'h>> {
         let sd = SnapshotCtx::new(host, snapshot, project)?;
         let program = sd.program()?;
@@ -148,7 +146,7 @@ impl<'h> Setup<'h> {
     }
 
     fn symbol_response(&self, symbol: P<Symbol>) -> CheckerResult<Value> {
-        self.sd.symbol_response(symbol, &self.sd.project)
+        self.sd.symbol_response(symbol, self.sd.project)
     }
 
     pub(crate) fn opt_symbol_response(&self, symbol: Option<P<Symbol>>) -> CheckerResult<Value> {
@@ -166,7 +164,7 @@ impl<'h> Setup<'h> {
     }
 
     fn register_type(&self, t: P<Type>) -> CheckerResult<u32> {
-        self.sd.scope.registry.register_type(&self.sd.project, self.checker_id, t)
+        self.sd.scope.registry.register_type(self.sd.project, self.checker_id, t)
     }
 
     fn register_opt_type(&self, t: Option<P<Type>>) -> CheckerResult<u32> {
@@ -261,7 +259,15 @@ impl<'h> Setup<'h> {
     }
 
     pub(crate) fn source_file(&self, file: &DocumentIdentifier) -> CheckerResult<P<SourceFile>> {
-        self.program.get_source_file(&file.to_file_name()).ok_or_else(|| {
+        let file_name = file.to_file_name();
+        if file_name.is_empty() {
+            // Go DocumentIdentifier.ToFileName constructs a rooted path before the source lookup.
+            return Err(CheckerError {
+                kind: super::host::CheckerErrorKind::Internal,
+                message: "panic: path must not be empty".to_string(),
+            });
+        }
+        self.program.get_source_file(&file_name).ok_or_else(|| {
             CheckerError::client(format!("source file not found: {}", file.display()))
         })
     }
@@ -329,7 +335,7 @@ fn build_symbol_response(
     o.set("reference", reference);
     o.set("name", Value::String(tsrs_ast::escape_symbol_name(symbol.name())));
     o.num("flags", symbol.flags().bits() as f64);
-    o.num("checkFlags", symbol.check_flags().bits() as f64);
+    o.nonzero("checkFlags", symbol.check_flags().bits() as f64);
     let decls = symbol.declarations();
     if !decls.is_empty() {
         o.set(
@@ -444,23 +450,26 @@ fn type_response_base(t: P<Type>, id: u32) -> Obj {
     } else if flags.intersects(TypeFlags::StringMapping) {
         target = t.as_string_mapping_type().target().map_or(0, |x| x.id().0);
     } else if flags.intersects(TypeFlags::TypeParameter) {
-        late.set("isThisType", Value::Bool(t.as_type_parameter().is_this_type()));
+        if t.as_type_parameter().is_this_type() {
+            late.set("isThisType", Value::Bool(true));
+        }
     } else if flags.intersects(TypeFlags::Intrinsic) {
         late.str_nonempty("intrinsicName", t.as_intrinsic_type().intrinsic_name());
     }
-    // encoding/json v2 `omitempty` only drops empty JSON values (null, "", [], {}): uint32 0 and false
-    // are emitted (pinned Go always sends objectFlags, isTupleType and isThisType).
-    o.num("objectFlags", object_flags as f64);
-    o.set("isTupleType", Value::Bool(is_tuple));
-    o.set("value", value);
+    // The pinned protocol uses omitzero for these fields; literal false, zero and empty strings
+    // remain values inside the non-nil interface, while an absent literal is omitted.
+    o.nonzero("objectFlags", object_flags as f64);
+    if is_tuple {
+        o.set("isTupleType", Value::Bool(true));
+    }
+    if !matches!(value, Value::Null) {
+        o.set("value", value);
+    }
     o.nonzero("target", target as f64);
     if let Some(alias) = t.alias() {
         late.ids("aliasTypeArguments", alias.type_arguments().iter().map(|x| x.id().0 as f64));
     }
     o.extend(late);
-    if !flags.intersects(TypeFlags::TypeParameter) {
-        o.set("isThisType", Value::Bool(false));
-    }
     o
 }
 
@@ -517,7 +526,7 @@ pub(crate) fn resolve_symbol_for_program(
             sd.scope.registry.resolve_symbol(r.id)
         }
         SYMBOL_OWNER_KIND_FILE => {
-            if r.file.is_none() || r.snapshot != 0 || !r.project.is_empty() {
+            if r.file.is_none() || r.snapshot != 0 || r.project != 0 {
                 return Err(CheckerError::client("invalid file symbol reference"));
             }
             let path = r.file_path().unwrap_or_default();

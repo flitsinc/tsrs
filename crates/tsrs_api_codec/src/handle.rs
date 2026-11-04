@@ -10,7 +10,13 @@ use crate::encoder::NodeIndexTable;
 
 /// Go `nodeHandleFrom` given the node's file and that file's index table.
 pub fn node_handle(table: &NodeIndexTable, file: &SourceFile, node: P<Node>) -> String {
-    format!("{}.{}.{}", table.get_index(node), node.kind() as u32, &*file.path().0)
+    format!(
+        "{}.{}.#{}.{}",
+        table.get_index(node),
+        node.kind() as u32,
+        tsrs_ast::get_node_id(file.as_node()).0,
+        &*file.path().0
+    )
 }
 
 /// Preserves the components and validation rules of Go node handles.
@@ -18,20 +24,26 @@ pub fn node_handle(table: &NodeIndexTable, file: &SourceFile, node: P<Node>) -> 
 /// The parts of a node handle as `resolveNodeHandle` parses them: the index must be a uint32, the kind is
 /// informational only (Go ignores it; it is returned unparsed), the path is everything after the second dot.
 #[derive(Debug, PartialEq, Eq)]
-pub struct ParsedNodeHandle<'a> {
+pub struct ParsedNodeHandle {
     pub index: u32,
-    pub kind: &'a str,
-    pub path: &'a str,
+    pub source_file_id: u64,
 }
 
-pub fn parse_node_handle(handle: &str) -> Option<ParsedNodeHandle<'_>> {
-    let (index, rest) = handle.split_once('.')?;
-    let (kind, path) = rest.split_once('.')?;
+pub fn parse_node_handle(handle: &str) -> Option<ParsedNodeHandle> {
+    let (index, file_key) = handle.split_once('.')?;
     // strconv.ParseUint(s, 10, 32): decimal digits only (no sign), at most u32::MAX.
     if index.is_empty() || !index.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
-    Some(ParsedNodeHandle { index: index.parse().ok()?, kind, path })
+    let file_id = file_key.strip_prefix('#')?;
+    if file_id.is_empty() || !file_id.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let source_file_id = file_id.parse().ok()?;
+    if source_file_id == 0 {
+        return None;
+    }
+    Some(ParsedNodeHandle { index: index.parse().ok()?, source_file_id })
 }
 
 /// Go `resolveNodeHandle` after the file lookup: the node at the handle's index, if any.

@@ -1,8 +1,3 @@
-import {
-    createMessageConnection,
-    SocketMessageReader,
-    SocketMessageWriter,
-} from "#vscode-jsonrpc/node";
 import { API as AsyncAPI } from "tsrs/async";
 import { API as SyncAPI } from "tsrs/sync";
 import assert from "node:assert/strict";
@@ -22,6 +17,11 @@ import {
     disabledServerTimingInfo,
     TimingCollector,
 } from "../src/api/timing.ts";
+import {
+    createMessageConnection,
+    SocketMessageReader,
+    SocketMessageWriter,
+} from "../vendor/vscode-jsonrpc/lib/node/main.js";
 import { createVirtualFileSystem } from "./testUtils.ts";
 
 test("disabled server timing preserves the client-only snapshot", () => {

@@ -69,16 +69,33 @@ function clientMethods(files, names) {
     return new Set(names.filter(name => text.includes(`"${name}"`)));
 }
 
-function runSuite(server) {
+function runSuite(server, tsRef) {
     const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tsrs-methods-")), "methods.log");
     fs.writeFileSync(log, "");
     const preload = new URL("coverage/record-methods.mjs", import.meta.url).href;
-    const result = spawnSync(process.execPath, ["--conditions", "@typescript/source", "--test", "--test-reporter=spec", "test/**/*.test.ts"], {
-        cwd: pkgDir,
-        encoding: "utf8",
-        maxBuffer: 1 << 28,
-        env: { ...process.env, TSRS_BINARY: server.exe, TSRS_METHOD_LOG: log, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${preload}`.trim() },
-    });
+    const wasmTest = path.join(pkgDir, "test", "sync", "wasm.test.ts");
+    const testFiles = listTs(path.join(pkgDir, "test")).filter(file => file.endsWith(".test.ts") && file !== wasmTest).sort();
+    // Native tests import the source wasmURL helper unconditionally, without loading its artifact.
+    const wasmLink = path.join(pkgDir, "node_modules/@typescript/typescript-wasip1-wasm");
+    let madeWasmLink = false;
+    if (fs.existsSync(path.join(pkgDir, "src/wasm")) && !fs.existsSync(wasmLink)) {
+        const source = path.join(tsRef, "packages/typescript-wasip1-wasm");
+        if (!fs.existsSync(path.join(source, "package.json"))) throw new Error("reference lacks packages/typescript-wasip1-wasm; widen its sparse checkout");
+        fs.mkdirSync(path.dirname(wasmLink), { recursive: true });
+        fs.symlinkSync(source, wasmLink, "junction");
+        madeWasmLink = true;
+    }
+    let result;
+    try {
+        result = spawnSync(process.execPath, ["--conditions", "@typescript/source", "--test", "--test-reporter=spec", ...testFiles], {
+            cwd: pkgDir,
+            encoding: "utf8",
+            maxBuffer: 1 << 28,
+            env: { ...process.env, TSRS_BINARY: server.exe, TSRS_METHOD_LOG: log, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${preload}`.trim() },
+        });
+    } finally {
+        if (madeWasmLink) fs.unlinkSync(wasmLink);
+    }
     const output = `${result.stdout}\n${result.stderr}`;
     const count = key => Number(output.match(new RegExp(`^ℹ ${key} (\\d+)$`, "m"))?.[1] ?? NaN);
     const totals = { tests: count("tests"), pass: count("pass"), fail: count("fail"), cancelled: count("cancelled"), skipped: count("skipped") };
@@ -102,6 +119,7 @@ function runSuite(server) {
 
 function main() {
     const opts = parseArgs(process.argv.slice(2));
+    if (process.env.TS_API_TEST_WASM) fail("this inventory covers native servers; unset TS_API_TEST_WASM");
     const commit = pinnedCommit();
     const methods = protoMethods(opts.tsRef, commit);
     const names = methods.map(m => m.name);
@@ -109,7 +127,7 @@ function main() {
     const asyncSet = clientMethods([...listTs(path.join(pkgDir, "src/api/async")), ...listTs(path.join(pkgDir, "src/api")).filter(f => !f.includes(`${path.sep}sync${path.sep}`))], names);
     const runs = opts.servers.map(server => {
         console.error(`running the SDK tests against ${server.label} (${server.exe})`);
-        const run = runSuite(server);
+        const run = runSuite(server, opts.tsRef);
         console.error(`${server.label}: ${run.totals.pass}/${run.totals.tests} pass, ${run.totals.fail} fail`);
         return run;
     });
@@ -120,6 +138,7 @@ function main() {
     lines.push("- **sync / async SDK**: the method name appears in that client's sources (not counting the generated method table).");
     lines.push("- **per server**: requests the upstream SDK test suite sent, as `ok/error` response counts for sync | async (inner batch requests included). `ok` means the server answered, not that the test passed; errors include intentional error-path tests. A method a test suite never sends is `-`.");
     lines.push("- This is not a server support claim; see the Rust server inventory for implemented/stubbed status.", "");
+    lines.push("- The standalone `test/sync/wasm.test.ts` artifact/reactor suite is excluded from this native-server inventory.", "");
     for (const run of runs) {
         lines.push(`Test run **${run.label}**: ${run.totals.tests} tests, ${run.totals.pass} pass, ${run.totals.fail} fail, ${run.totals.cancelled} cancelled, ${run.totals.skipped} skipped.` +
             (run.failing.length ? ` Failing files: ${[...new Set(run.failing)].map(f => `\`${f}\``).join(", ")}.` : ""));

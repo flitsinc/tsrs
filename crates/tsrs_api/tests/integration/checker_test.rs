@@ -164,14 +164,31 @@ impl TestHost {
             .unwrap()
     }
 
+    fn project_handle(&self) -> tsrs_project::Handle {
+        self.snapshot
+            .project_collection
+            .get_project(&tsrs_project::ID(self.project.clone()))
+            .unwrap()
+            .handle()
+    }
+
+    fn other_project_handle(&self) -> tsrs_project::Handle {
+        self.snapshot
+            .project_collection
+            .get_project(&tsrs_project::ID("/q/tsconfig.json".to_string()))
+            .unwrap()
+            .handle()
+    }
+
     fn call(&self, method: &str, params: &str) -> CheckerResult<Value> {
         let params =
             json::unmarshal(params).unwrap_or_else(|e| panic!("bad test params {e}: {params}"));
         match handle(self, method, &params).expect("checker method")? {
             CheckerResponse::Json(v) => Ok(v),
-            CheckerResponse::EncodedNode(bytes) => {
+            CheckerResponse::EncodedNode(Some(bytes)) => {
                 Ok(Value::String(String::from_utf8(bytes).unwrap()))
             }
+            CheckerResponse::EncodedNode(None) => Ok(Value::Null),
         }
     }
 
@@ -182,11 +199,7 @@ impl TestHost {
     /// `{"snapshot":H,"project":P,<extra>}`
     fn sp(&self, extra: &str) -> String {
         let sep = if extra.is_empty() { "" } else { "," };
-        format!(
-            r#"{{"snapshot":{},"project":{}{sep}{extra}}}"#,
-            self.handle,
-            json::marshal_string(&self.project)
-        )
+        format!(r#"{{"snapshot":{},"project":{}{sep}{extra}}}"#, self.handle, self.project_handle())
     }
 
     fn type_at(&self, file: &str, text: &str, needle: &str) -> Value {
@@ -216,7 +229,11 @@ impl TestHost {
         let utf8 = u32::try_from(text.find(needle).unwrap())
             .expect("test source fits in a source position");
         let node = tsrs_astnav::get_touching_property_name(sf, utf8);
-        self.node_handle(node).unwrap()
+        self.request_handle(node)
+    }
+
+    fn request_handle(&self, node: P<Node>) -> String {
+        crate::common::node_request_handle(&self.node_handle(node).unwrap())
     }
 }
 
@@ -279,7 +296,13 @@ impl CheckerHost for TestHost {
             .iter()
             .position(|n| *n == node)
             .ok_or_else(|| CheckerError::client("node not in table"))?;
-        Ok(format!("{}.{}.{}", idx + 1, node.kind() as i16, file.path().as_str()))
+        Ok(format!(
+            "{}.{}.#{}.{}",
+            idx + 1,
+            node.kind() as i16,
+            tsrs_ast::get_node_id(file.as_node()).0,
+            file.path().as_str()
+        ))
     }
 
     fn resolve_node_handle(
@@ -287,19 +310,13 @@ impl CheckerHost for TestHost {
         program: &'static Program,
         handle: &str,
     ) -> CheckerResult<P<Node>> {
-        let mut parts = handle.splitn(3, '.');
-        let (Some(idx), Some(_kind), Some(path)) = (parts.next(), parts.next(), parts.next())
-        else {
-            return Err(CheckerError::client(format!("invalid node handle {handle:?}")));
-        };
-        let idx: usize = idx
-            .parse()
-            .map_err(|_| CheckerError::client(format!("invalid node handle {handle:?}")))?;
+        let parsed = tsrs_api_codec::parse_node_handle(handle)
+            .ok_or_else(|| CheckerError::client(format!("invalid node handle {handle:?}")))?;
         let file = program
-            .get_source_file_by_path(&Path::new(path))
+            .get_source_file_by_node_id(tsrs_ast::NodeId(parsed.source_file_id))
             .ok_or_else(|| CheckerError::client("stale node handle"))?;
         node_table(file)
-            .get(idx.wrapping_sub(1))
+            .get((parsed.index as usize).wrapping_sub(1))
             .copied()
             .ok_or_else(|| CheckerError::client("stale node handle"))
     }
@@ -621,7 +638,7 @@ fn overloads_signatures_and_resolution() {
         let pos = u32::try_from(MAIN.find("over(42)").unwrap())
             .expect("test source fits in a source position");
         let ident = tsrs_astnav::get_touching_property_name(sf, pos);
-        h.node_handle(ident.parent().unwrap()).unwrap()
+        h.request_handle(ident.parent().unwrap())
     };
     let resolved = h.ok("getResolvedSignature", &h.sp(&format!(r#""location":"{call}""#)));
     let ret =
@@ -677,7 +694,8 @@ fn classes_predicates_enums_and_jsdoc() {
     assert_eq!(h.type_string(field(&pred, "type")), "string");
     // Enum constant values via a declaration node handle.
     let red = h.symbol_at(MAIN_FILE, MAIN, "Red =");
-    let red_decl = str_of(&arr(field(&red, "declarations"))[0]);
+    let red_decl =
+        crate::common::node_request_handle(&str_of(&arr(field(&red, "declarations"))[0]));
     let value = h.ok("getConstantValue", &h.sp(&format!(r#""location":"{red_decl}""#)));
     assert_eq!(field(&value, "isNumber"), &Value::Bool(true));
     assert_eq!(field(&value, "value"), &Value::Number(1.0));
@@ -755,10 +773,7 @@ fn structured_type_shapes_tuple_mapped_conditional_literal() {
         .call("getCheckTypeOfType", &h.sp(&format!(r#""objectId":{}"#, num(&lit, "id"))))
         .unwrap_err();
     assert_eq!(err.kind, CheckerErrorKind::Internal);
-    assert_eq!(
-        err.message,
-        "panic: interface conversion: checker.TypeData is *checker.LiteralType, not *checker.ConditionalType"
-    );
+    assert_eq!(err.message, "panic: Invalid type cast");
     let err =
         h.call("getTypesOfType", &h.sp(&format!(r#""objectId":{}"#, num(&lit, "id")))).unwrap_err();
     assert_eq!(err.message, "panic: Unhandled case in Type.Types");
@@ -847,8 +862,7 @@ fn handle_validation_stale_cross_project_and_release() {
         h.call("getTypeArguments", &h.sp(r#""type":999999"#)).unwrap_err().kind,
         CheckerErrorKind::Client
     );
-    let other_project =
-        format!(r#"{{"snapshot":{},"project":"/other/tsconfig.json","type":{id}}}"#, h.handle);
+    let other_project = format!(r#"{{"snapshot":{},"project":0,"type":{id}}}"#, h.handle);
     assert_eq!(
         h.call("getTypeArguments", &other_project).unwrap_err().kind,
         CheckerErrorKind::Client
@@ -856,7 +870,7 @@ fn handle_validation_stale_cross_project_and_release() {
     let other_snapshot = format!(
         r#"{{"snapshot":{},"project":{},"type":{id}}}"#,
         h.handle + 1000,
-        json::marshal_string(&h.project)
+        h.project_handle()
     );
     assert_eq!(
         h.call("getTypeArguments", &other_snapshot).unwrap_err().kind,
@@ -905,10 +919,10 @@ fn replaced_api_checker_makes_old_handles_stale() {
     let h = fixture();
     let t = h.type_at(MAIN_FILE, MAIN, "box:");
     let id = num(&t, "id") as u32;
-    let checker_id = h.registry.project_checker_id(&h.project);
+    let checker_id = h.registry.project_checker_id(h.project_handle());
     assert_ne!(checker_id, 0);
-    assert!(h.registry.resolve_type(&h.project, id, Some(checker_id)).is_ok());
-    let err = h.registry.resolve_type(&h.project, id, Some(checker_id + 1)).unwrap_err();
+    assert!(h.registry.resolve_type(h.project_handle(), id, Some(checker_id)).is_ok());
+    let err = h.registry.resolve_type(h.project_handle(), id, Some(checker_id + 1)).unwrap_err();
     assert!(err.message.contains("stale"), "{err}");
 }
 
@@ -934,8 +948,8 @@ fn merged_symbol_checker_methods() {
     let raw_b = tsrs_api::checker::setup::file_symbol_response(&h, b.symbol().unwrap()).unwrap();
     assert_ne!(field(&raw_a, "reference"), field(&raw_b, "reference"));
 
-    let node_a = h.node_handle(a).unwrap();
-    let node_b = h.node_handle(b).unwrap();
+    let node_a = h.request_handle(a);
+    let node_b = h.request_handle(b);
     let merged =
         h.ok("getSymbolOfDeclarationForChecker", &h.sp(&format!(r#""location":"{node_a}""#)));
     for (method, params) in [
@@ -951,8 +965,8 @@ fn merged_symbol_checker_methods() {
             "{method}"
         );
     }
-    let name = h.node_handle(a.as_module_declaration().name()).unwrap();
-    let file = h.node_handle(h.program().get_source_file("/p/a.ts").unwrap().as_node()).unwrap();
+    let name = h.request_handle(a.as_module_declaration().name());
+    let file = h.request_handle(h.program().get_source_file("/p/a.ts").unwrap().as_node());
     for location in [name, file] {
         assert_eq!(
             h.ok("getSymbolOfNode", &h.sp(&format!(r#""location":"{location}""#))),
@@ -993,17 +1007,15 @@ fn late_bound_symbol_checker_methods() {
         tsrs_api::checker::setup::file_symbol_response(&h, computed.symbol().unwrap()).unwrap();
     let late = h.ok(
         "getSymbolOfDeclarationForChecker",
-        &h.sp(&format!(r#""location":"{}""#, h.node_handle(computed).unwrap())),
+        &h.sp(&format!(r#""location":"{}""#, h.request_handle(computed))),
     );
     assert_ne!(field(&raw, "reference"), field(&late, "reference"));
-    let through_node = h.ok(
-        "getSymbolOfNode",
-        &h.sp(&format!(r#""location":"{}""#, h.node_handle(computed).unwrap())),
-    );
+    let through_node =
+        h.ok("getSymbolOfNode", &h.sp(&format!(r#""location":"{}""#, h.request_handle(computed))));
     assert_eq!(field(&through_node, "reference"), field(&late, "reference"));
     let container = h.ok(
         "getSymbolOfDeclarationForChecker",
-        &h.sp(&format!(r#""location":"{}""#, h.node_handle(class).unwrap())),
+        &h.sp(&format!(r#""location":"{}""#, h.request_handle(class))),
     );
     let parent = h.ok(
         "getParentOfSymbolForChecker",
@@ -1012,7 +1024,7 @@ fn late_bound_symbol_checker_methods() {
     assert_eq!(field(&parent, "reference"), field(&container, "reference"));
     let ordinary_checker = h.ok(
         "getSymbolOfDeclarationForChecker",
-        &h.sp(&format!(r#""location":"{}""#, h.node_handle(ordinary).unwrap())),
+        &h.sp(&format!(r#""location":"{}""#, h.request_handle(ordinary))),
     );
     let ordinary_raw =
         tsrs_api::checker::setup::file_symbol_response(&h, ordinary.symbol().unwrap()).unwrap();
@@ -1031,7 +1043,7 @@ impl TestHost {
 
             node
         });
-        self.node_handle(node).unwrap()
+        self.request_handle(node)
     }
 
     fn declared(&self, needle: &str) -> Value {
@@ -1277,8 +1289,9 @@ fn checker_operations_on_types_and_signatures() {
     let target =
         h.ok("getTargetOfSignature", &h.sp(&format!(r#""objectId":{}"#, num(&resolved, "id"))));
     assert_eq!(num(&target, "id"), num(&resolved, "target"));
-    let decl =
-        str_of(&arr(field(&h.symbol_at(MAIN_FILE, MAIN, "over(x: string)"), "declarations"))[0]);
+    let decl = crate::common::node_request_handle(&str_of(
+        &arr(field(&h.symbol_at(MAIN_FILE, MAIN, "over(x: string)"), "declarations"))[0],
+    ));
     let from_decl = h.ok("getSignatureFromDeclaration", &h.sp(&format!(r#""location":"{decl}""#)));
     assert_eq!(h.type_string(&h.tid("getReturnTypeOfSignature", "objectId", &from_decl)), "string");
     // Contextual typing.
@@ -1331,11 +1344,14 @@ fn language_service_backed_methods() {
     let h = fixture();
     // getSignatureUsages: usages of the overloaded `over` (declarations excluded, call attached).
     let over = h.symbol_at(MAIN_FILE, MAIN, "over(x: string)");
-    let decl = str_of(&arr(field(&over, "declarations"))[0]);
+    let decl = crate::common::node_request_handle(&str_of(&arr(field(&over, "declarations"))[0]));
     let usages = h.ok("getSignatureUsages", &h.sp(&format!(r#""signatureDecl":"{decl}""#)));
     let usages = arr(&usages);
     assert_eq!(usages.len(), 1, "{}", json::marshal(&Value::Array(usages.clone())).unwrap());
-    assert_eq!(str_of(field(&usages[0], "call")), h.ancestor_handle_at("over(42)", 1));
+    assert_eq!(
+        crate::common::node_request_handle(&str_of(field(&usages[0], "call"))),
+        h.ancestor_handle_at("over(42)", 1)
+    );
     // getReferencedSymbolsForNode on the `box` declaration name.
     let name = h.handle_at(MAIN_FILE, MAIN, "box:");
     let pos = MAIN.find("box:").unwrap();
@@ -1400,7 +1416,7 @@ fn core_session_hook_maps_errors_and_encodings() {
     let err = session
         .handle_request(
             "getTypeAtPosition",
-            br#"{"snapshot":1,"project":"/p/tsconfig.json","file":"/p/a.ts","position":0}"#,
+            br#"{"snapshot":1,"project":1,"file":"/p/a.ts","position":0}"#,
         )
         .unwrap_err();
     assert_eq!(err.kind, ErrorKind::ClientError, "{err}");
@@ -1414,8 +1430,8 @@ fn core_session_hook_maps_errors_and_encodings() {
     assert_eq!(tsrs_api::checker::base64_encode(b"foobar"), "Zm9vYmFy");
 }
 
-/// Differential check against the pinned Go API session (microsoft/TypeScript b85298b6, tsc/internal/api).
-/// `testdata/go_probe/go_probe_b85298b6.jsonl` is produced by `testdata/go_probe/regen.sh`, which runs
+/// Differential check against the pinned Go API session (microsoft/TypeScript e2bc2bcb, tsc/internal/api).
+/// `testdata/go_probe/go_probe_e2bc2bcb.jsonl` is produced by `testdata/go_probe/regen.sh`, which runs
 /// `testdata/go_probe/zz_tsrs_probe_test.go` inside the pinned reference checkout against Go's
 /// `Session.HandleRequest` with the same fixture (`testdata/go_probe/fixture`) and needles; `probe_lines`
 /// issues the same request sequence through the tsrs handlers. Results are compared as JSON values (not
@@ -1439,7 +1455,7 @@ fn pinned_go_differential() {
     }
     let golden = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/checker/testdata/go_probe/go_probe_b85298b6.jsonl"
+        "/src/checker/testdata/go_probe/go_probe_e2bc2bcb.jsonl"
     ));
     // Returns (query, result with objectFlags masked, raw objectFlags).
     let parse = |l: &str| -> (String, Value, Option<u64>) {
@@ -1570,13 +1586,7 @@ fn probe_lines() -> Vec<String> {
             obj(vec![
                 ("type", ts(&ty)),
                 ("typeFlags", get(&ty, "flags")),
-                (
-                    "objectFlags",
-                    match get(&ty, "objectFlags") {
-                        Value::Null if ty != Value::Null => Value::Number(0.0),
-                        v => v,
-                    },
-                ),
+                ("objectFlags", get(&ty, "objectFlags")),
                 ("sym", get(&sy, "name")),
                 ("symFlags", get(&sy, "flags")),
                 ("kind", get(&get(&sy, "reference"), "kind")),
@@ -1700,13 +1710,20 @@ fn probe_lines() -> Vec<String> {
     let id = num(&boxt, "id");
     let (_, e) = res(h.call(
         "getTypeArguments",
-        &format!(r#"{{"snapshot":{},"project":"/other/tsconfig.json","type":{id}}}"#, h.handle),
+        &format!(r#"{{"snapshot":{},"project":0,"type":{id}}}"#, h.handle),
     ));
     emit("err.unknownProject", s(&e));
     let (r, e) = res(h.call(
         "getTypeArguments",
-        &format!(r#"{{"snapshot":{},"project":"/q/tsconfig.json","type":{id}}}"#, h.handle),
+        &format!(
+            r#"{{"snapshot":{},"project":{},"type":{id}}}"#,
+            h.handle,
+            h.other_project_handle()
+        ),
     ));
+    // Normalize the known process-wide project counter, matching the Go fixture producer.
+    let e =
+        e.replace(&format!("for project {})", h.other_project_handle()), "for project <handle>)");
     emit("err.foreignProjectType", obj(vec![("r", r), ("e", s(&e))]));
     let (_, e) = res(h.call("getTypeArguments", &h.sp(r#""type":999999"#)));
     emit("err.unknownType", s(&e));
@@ -1715,7 +1732,7 @@ fn probe_lines() -> Vec<String> {
         &format!(
             r#"{{"snapshot":{},"project":{},"type":{id}}}"#,
             h.handle + 1000,
-            json::marshal_string(&h.project)
+            h.project_handle()
         ),
     ));
     emit("err.unknownSnapshot", s(&e));
@@ -1731,7 +1748,11 @@ fn probe_lines() -> Vec<String> {
     emit("err.forgedSnapshotRef", s(&e));
     let (qt, e) = res(h.call(
         "getTypeOfSymbol",
-        &format!(r#"{{"snapshot":{},"project":"/q/tsconfig.json","symbol":{aref}}}"#, h.handle),
+        &format!(
+            r#"{{"snapshot":{},"project":{},"symbol":{aref}}}"#,
+            h.handle,
+            h.other_project_handle()
+        ),
     ));
     let qts = if qt == Value::Null {
         Value::Null
@@ -1739,8 +1760,9 @@ fn probe_lines() -> Vec<String> {
         h.ok(
             "typeToString",
             &format!(
-                r#"{{"snapshot":{},"project":"/q/tsconfig.json","type":{}}}"#,
+                r#"{{"snapshot":{},"project":{},"type":{}}}"#,
                 h.handle,
+                h.other_project_handle(),
                 num(&qt, "id")
             ),
         )
@@ -1781,7 +1803,7 @@ fn well_known_singletons_identify_checker_results() {
         let pos = u32::try_from(OTHER.find("notFn()").unwrap())
             .expect("test source fits in a source position");
         let ident = tsrs_astnav::get_touching_property_name(sf, pos);
-        h.node_handle(ident.parent().unwrap()).unwrap()
+        h.request_handle(ident.parent().unwrap())
     };
     let resolved = h.ok("getResolvedSignature", &h.sp(&format!(r#""location":"{call}""#)));
     assert_eq!(

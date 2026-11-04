@@ -41,8 +41,8 @@ fn create_snapshot_uses_full_file_system_and_layers() {
     );
     let snap = num(get(&r, "snapshot"));
     assert_eq!(str_of(get(&r, "projects.0.configFileName")), cfg);
-    let project = str_of(get(&r, "projects.0.id")).to_string();
-    let sp = format!("\"snapshot\":{snap},\"project\":{}", quote(&project));
+    let project = project_handle(&r);
+    let sp = format!("\"snapshot\":{snap},\"project\":{project}");
     assert_eq!(
         call(&s, "getSourceFileNames", &format!("{{{sp}}}")),
         Value::Array(vec![Value::String(index)])
@@ -90,12 +90,9 @@ fn full_file_system_is_total_and_layer_retains_base() {
         ),
     );
     let snap = num(get(&r, "snapshot"));
-    let project = str_of(get(&r, "projects.0.id")).to_string();
-    let names = call(
-        &s,
-        "getSourceFileNames",
-        &format!("{{\"snapshot\":{snap},\"project\":{}}}", quote(&project)),
-    );
+    let project = project_handle(&r);
+    let names =
+        call(&s, "getSourceFileNames", &format!("{{\"snapshot\":{snap},\"project\":{project}}}"));
     let names = json::marshal(&names).unwrap();
     assert!(names.contains("src/index.ts") && names.contains("src/other.ts"), "{names}");
     assert!(!names.contains("host.ts"), "full filesystem must hide host files: {names}");
@@ -110,7 +107,7 @@ fn full_file_system_is_total_and_layer_retains_base() {
         ),
     );
     let snap2 = num(get(&r2, "snapshot"));
-    let sp2 = format!("\"snapshot\":{snap2},\"project\":{}", quote(&project));
+    let sp2 = format!("\"snapshot\":{snap2},\"project\":{project}");
     let d = call(&s, "getSemanticDiagnostics", &format!("{{{sp2}}}"));
     assert_eq!(get(&d, "0.code"), &Value::Number(2322.0), "{}", json::marshal(&d).unwrap());
     let names2 = json::marshal(&call(&s, "getSourceFileNames", &format!("{{{sp2}}}"))).unwrap();
@@ -120,7 +117,7 @@ fn full_file_system_is_total_and_layer_retains_base() {
         call(
             &s,
             "getSemanticDiagnostics",
-            &format!("{{\"snapshot\":{snap},\"project\":{}}}", quote(&project))
+            &format!("{{\"snapshot\":{snap},\"project\":{project}}}")
         ),
         Value::Array(vec![])
     );
@@ -147,8 +144,8 @@ fn layer_over_host_overrides_and_removes() {
         ),
     );
     let snap = num(get(&r, "snapshot"));
-    let project = str_of(get(&r, "projects.0.id")).to_string();
-    let sp = format!("\"snapshot\":{snap},\"project\":{}", quote(&project));
+    let project = project_handle(&r);
+    let sp = format!("\"snapshot\":{snap},\"project\":{project}");
     let names = json::marshal(&call(&s, "getSourceFileNames", &format!("{{{sp}}}"))).unwrap();
     assert!(names.contains("a.ts") && !names.contains("b.ts"), "{names}");
     let d = call(&s, "getSemanticDiagnostics", &format!("{{{sp}}}"));
@@ -183,7 +180,7 @@ fn emit_from_layer_over_full_file_system_returns_contents() {
         ),
     );
     let base_snap = num(get(&base, "snapshot"));
-    let project = str_of(get(&base, "projects.0.id")).to_string();
+    let project = project_handle(&base);
     let layered = call(
         &s,
         "updateSnapshot",
@@ -193,9 +190,8 @@ fn emit_from_layer_over_full_file_system_returns_contents() {
     );
     assert_eq!(get(&layered, "projects"), &Value::Array(vec![]));
     let lsnap = num(get(&layered, "snapshot"));
-    let emit = |snap: u64| {
-        call(&s, "emit", &format!("{{\"snapshot\":{snap},\"project\":{}}}", quote(&project)))
-    };
+    let emit =
+        |snap: u64| call(&s, "emit", &format!("{{\"snapshot\":{snap},\"project\":{project}}}"));
     let e = emit(lsnap);
     assert_eq!(
         get(&e, "emittedFiles"),
@@ -248,8 +244,8 @@ fn file_notifications_expand_to_request_symlink_aliases() {
         ),
     );
     let snap = num(get(&r, "snapshot"));
-    let project = str_of(get(&r, "projects.0.id")).to_string();
-    let sp = |snap: u64| format!("\"snapshot\":{snap},\"project\":{}", quote(&project));
+    let project = project_handle(&r);
+    let sp = |snap: u64| format!("\"snapshot\":{snap},\"project\":{project}");
     let names =
         json::marshal(&call(&s, "getSourceFileNames", &format!("{{{}}}", sp(snap)))).unwrap();
     assert!(names.contains("lnk/a.ts"), "{names}");

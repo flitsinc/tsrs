@@ -1,8 +1,6 @@
 // Integrated regression tests through core's real `Session` (codec node handles, source-file
 // descriptors and leases, transport-independent request dispatch), compared with responses recorded
-// from the source-phase-import Go session (testdata/go_probe/go_shapes_2f9fd09a.jsonl).
-// Source31 tightens DocumentIdentifier decoding; its three changed responses are recorded
-// separately in go_shapes_ed4807212c_docid.jsonl, verified against exact-source Go.
+// from the exact e2bc2bcb Go session (testdata/go_probe/go_shapes_e2bc2bcb.jsonl).
 //
 // Compared as JSON values after one normalization: ids that are per-process or per-checker counters
 // (type / signature / symbol ids, source-file node ids) are renamed per line in order of first
@@ -38,11 +36,7 @@ const OTHER: &str = include_str!(concat!(
 ));
 const GO_SHAPES: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/src/checker/testdata/go_probe/go_shapes_2f9fd09a.jsonl"
-));
-const GO_SHAPES_SOURCE31_DOCID: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/checker/testdata/go_probe/go_shapes_ed4807212c_docid.jsonl"
+    "/src/checker/testdata/go_probe/go_shapes_e2bc2bcb.jsonl"
 ));
 
 const ID_KEYS: &[&str] = &[
@@ -73,6 +67,7 @@ struct Ids {
     numbers: FxHashMap<u64, usize>,
     symbols: FxHashMap<u64, usize>,
     strings: FxHashMap<String, usize>,
+    projects: FxHashMap<u64, usize>,
 }
 
 /// Keys whose object values are symbol references (their `id` is a symbol id, a separate counter).
@@ -87,6 +82,10 @@ const SYMBOL_KEYS: &[&str] = &[
 ];
 
 impl Ids {
+    fn project(&mut self, n: f64) -> Value {
+        let next = self.projects.len() + 1;
+        Value::String(format!("project#{}", self.projects.entry(n as u64).or_insert(next)))
+    }
     fn num(&mut self, n: f64) -> Value {
         let next = self.numbers.len() + 1;
         Value::String(format!("#{}", self.numbers.entry(n as u64).or_insert(next)))
@@ -111,6 +110,7 @@ fn normalize(v: &Value, ids: &mut Ids, in_symbol: bool) -> Value {
             out.extend(keys.into_iter().map(|k| {
                 let child = &o[k];
                 let nv = match (k, child) {
+                    ("project", Value::Number(n)) => ids.project(*n),
                     ("id", Value::Number(n)) if in_symbol => ids.sym(*n),
                     (key, Value::Number(n)) if ID_KEYS.contains(&key) => ids.num(*n),
                     (key, Value::Array(a)) if ID_ARRAY_KEYS.contains(&key) => Value::Array(
@@ -137,6 +137,20 @@ fn normalize(v: &Value, ids: &mut Ids, in_symbol: bool) -> Value {
             Value::Object(out)
         }
         Value::Array(a) => Value::Array(a.iter().map(|x| normalize(x, ids, in_symbol)).collect()),
+        Value::String(handle) => {
+            let mut parts = handle.splitn(4, '.');
+            match (parts.next(), parts.next(), parts.next(), parts.next()) {
+                (Some(index), Some(kind), Some(file), Some(path))
+                    if index.parse::<u32>().is_ok()
+                        && kind.parse::<u32>().is_ok()
+                        && file.starts_with('#') =>
+                {
+                    let Value::String(file) = ids.str(&file[1..]) else { unreachable!() };
+                    Value::String(format!("{index}.{kind}.#{file}.{path}"))
+                }
+                _ => v.clone(),
+            }
+        }
         other => other.clone(),
     }
 }
@@ -144,7 +158,7 @@ fn normalize(v: &Value, ids: &mut Ids, in_symbol: bool) -> Value {
 pub(super) struct S {
     pub(super) session: Arc<Session>,
     pub(super) snapshot: f64,
-    pub(super) project: String,
+    pub(super) project: f64,
     lines: Vec<(String, Value)>,
 }
 
@@ -180,7 +194,7 @@ impl S {
     fn sp(&self, extra: &[(&str, Value)]) -> Value {
         let mut o = JsonMap::new();
         o.insert("snapshot".to_string(), Value::Number(self.snapshot));
-        o.insert("project".to_string(), Value::String(self.project.clone()));
+        o.insert("project".to_string(), Value::Number(self.project));
         o.extend(extra.iter().map(|(k, v)| (k.to_string(), v.clone())));
         Value::Object(o)
     }
@@ -256,7 +270,7 @@ pub(super) fn session_with(extra: &[(&str, &str)], configs: &[&str]) -> S {
     )));
     let session =
         Session::new(SessionOptions::new("/".to_string(), bundled::lib_path(), fs, false));
-    let mut s = S { session, snapshot: 0.0, project: String::new(), lines: Vec::new() };
+    let mut s = S { session, snapshot: 0.0, project: 0.0, lines: Vec::new() };
     let open = Value::Array(configs.iter().map(|c| Value::String(c.to_string())).collect());
     let snap = s.call("createSnapshot", &obj(&[("openProjects", open)])).unwrap();
     s.snapshot = match get(&snap, "snapshot") {
@@ -267,7 +281,7 @@ pub(super) fn session_with(extra: &[(&str, &str)], configs: &[&str]) -> S {
     s.project = projects
         .iter()
         .find_map(|p| match get(p, "id") {
-            Value::String(id) if id.starts_with("/p/") => Some(id),
+            Value::String(id) if id.starts_with("/p/") => Some(number_value(&get(p, "handle"))),
             _ => None,
         })
         .expect("/p project");
@@ -301,7 +315,7 @@ fn completion_symbols_require_preparation_in_the_same_snapshot() {
     )));
     let session =
         Session::new(SessionOptions::new("/".to_string(), bundled::lib_path(), fs, false));
-    let mut s = S { session, snapshot: 0.0, project: String::new(), lines: Vec::new() };
+    let mut s = S { session, snapshot: 0.0, project: 0.0, lines: Vec::new() };
     let unprepared = s
         .call(
             "createSnapshot",
@@ -321,25 +335,25 @@ fn completion_symbols_require_preparation_in_the_same_snapshot() {
             &obj(&[("snapshot", n(s.snapshot)), ("file", Value::String("/p/src/main.ts".into()))]),
         )
         .unwrap();
-    s.project = match get(&project, "id") {
-        Value::String(id) => id,
+    s.project = match get(&project, "handle") {
+        Value::Number(id) => id,
         other => panic!("missing project ID: {other:?}"),
     };
-    let completion_params = |snapshot: f64, project: &str, include_symbol: bool| {
+    let completion_params = |snapshot: f64, project: f64, include_symbol: bool| {
         obj(&[
             ("snapshot", n(snapshot)),
-            ("project", Value::String(project.into())),
+            ("project", Value::Number(project)),
             ("file", Value::String("/p/src/main.ts".into())),
             ("position", n(5.0)),
             ("includeSymbol", Value::Bool(include_symbol)),
         ])
     };
     let err = s
-        .call("getCompletionsAtPosition", &completion_params(s.snapshot, &s.project, true))
+        .call("getCompletionsAtPosition", &completion_params(s.snapshot, s.project, true))
         .unwrap_err();
     assert!(err.contains("snapshot is not prepared for auto-imports"), "{err}");
     let retried = s
-        .call("getCompletionsAtPosition", &completion_params(s.snapshot, &s.project, false))
+        .call("getCompletionsAtPosition", &completion_params(s.snapshot, s.project, false))
         .unwrap();
     assert!(
         array_value(&get(&retried, "entries"))
@@ -358,7 +372,7 @@ fn completion_symbols_require_preparation_in_the_same_snapshot() {
         .unwrap();
     let prepared_id = number_value(&get(&prepared, "snapshot"));
     let completions = s
-        .call("getCompletionsAtPosition", &completion_params(prepared_id, &s.project, true))
+        .call("getCompletionsAtPosition", &completion_params(prepared_id, s.project, true))
         .unwrap();
     assert!(
         array_value(&get(&completions, "entries"))
@@ -380,7 +394,7 @@ fn snapshot_preferences_control_auto_import_completions() {
     )));
     let session =
         Session::new(SessionOptions::new("/".to_string(), bundled::lib_path(), fs, false));
-    let s = S { session, snapshot: 0.0, project: String::new(), lines: Vec::new() };
+    let s = S { session, snapshot: 0.0, project: 0.0, lines: Vec::new() };
     let disabled = s
         .call(
             "createSnapshot",
@@ -400,8 +414,8 @@ fn snapshot_preferences_control_auto_import_completions() {
             &obj(&[("snapshot", n(disabled_id)), ("file", Value::String("/p/src/main.ts".into()))]),
         )
         .unwrap();
-    let project_id = match get(&project, "id") {
-        Value::String(id) => id,
+    let project_id = match get(&project, "handle") {
+        Value::Number(id) => id,
         other => panic!("missing project ID: {other:?}"),
     };
     let completions = |snapshot| {
@@ -409,7 +423,7 @@ fn snapshot_preferences_control_auto_import_completions() {
             "getCompletionsAtPosition",
             &obj(&[
                 ("snapshot", n(snapshot)),
-                ("project", Value::String(project_id.clone())),
+                ("project", Value::Number(project_id)),
                 ("file", Value::String("/p/src/main.ts".into())),
                 ("position", n(5.0)),
                 ("includeSymbol", Value::Bool(true)),
@@ -473,7 +487,7 @@ fn fresh_snapshots_prepare_dependency_imports_while_creating_programs() {
         )));
         let session =
             Session::new(SessionOptions::new("/".to_string(), bundled::lib_path(), fs, false));
-        let s = S { session, snapshot: 0.0, project: String::new(), lines: Vec::new() };
+        let s = S { session, snapshot: 0.0, project: 0.0, lines: Vec::new() };
         let changes = obj(&[
             (
                 "openProjects",
@@ -517,7 +531,7 @@ fn fresh_snapshots_prepare_dependency_imports_while_creating_programs() {
                 "getCompletionsAtPosition",
                 &obj(&[
                     ("snapshot", snapshot_id),
-                    ("project", get(&project, "id")),
+                    ("project", get(&project, "handle")),
                     ("file", Value::String("/home/projects/MixedCase/index.ts".into())),
                     ("position", n(8.0)),
                     ("includeSymbol", Value::Bool(true)),
@@ -554,7 +568,7 @@ fn fresh_unprepared_snapshot_retries_dependency_imports_without_symbols() {
     )));
     let session =
         Session::new(SessionOptions::new("/".to_string(), bundled::lib_path(), fs, false));
-    let s = S { session, snapshot: 0.0, project: String::new(), lines: Vec::new() };
+    let s = S { session, snapshot: 0.0, project: 0.0, lines: Vec::new() };
     let created = s
         .call(
             "createSnapshot",
@@ -579,7 +593,7 @@ fn fresh_unprepared_snapshot_retries_dependency_imports_without_symbols() {
             "getCompletionsAtPosition",
             &obj(&[
                 ("snapshot", snapshot),
-                ("project", get(&project, "id")),
+                ("project", get(&project, "handle")),
                 ("file", Value::String("/home/projects/MixedCase/index.ts".into())),
                 ("position", n(8.0)),
                 ("includeSymbol", Value::Bool(false)),
@@ -707,7 +721,9 @@ fn shapes() -> Vec<(String, Value)> {
         &s.call("getSymbolAtPosition", &s.at(needle)).unwrap(),
         "declarations",
     ) {
-        Value::Array(a) => a[0].clone(),
+        Value::Array(a) => {
+            Value::String(crate::common::node_request_handle(crate::common::str_of(&a[0])))
+        }
         other => panic!("{other:?}"),
     };
     let box_decl = first_decl(&s, "box:");
@@ -811,11 +827,8 @@ fn shapes() -> Vec<(String, Value)> {
     s.wrong("getParameterType(index -1)", "getParameterType", p);
 
     // Missing / null / empty parameter values (same raw payloads as the Go probe).
-    let sp = format!(
-        r#""snapshot":{},"project":{}"#,
-        json::marshal(&n(s.snapshot)).unwrap(),
-        json::marshal_string(&s.project)
-    );
+    let sp =
+        format!(r#""snapshot":{},"project":{}"#, json::marshal(&n(s.snapshot)).unwrap(), s.project);
     for (method, raw) in [
         ("getSymbolAtPosition", r#"{<sp>,"position":0}"#),
         ("getSymbolAtPosition", r#"{<sp>,"file":null,"position":0}"#),
@@ -849,17 +862,8 @@ fn shapes() -> Vec<(String, Value)> {
 }
 
 #[test]
-fn session_responses_match_go_with_source31_document_identifiers() {
+fn session_responses_match_go_at_e2bc() {
     let ours: FxHashMap<String, Value> = shapes().into_iter().collect();
-    let source31_docid: FxHashMap<String, Value> = GO_SHAPES_SOURCE31_DOCID
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(|line| {
-            let value = json::unmarshal(line).unwrap();
-            let Value::String(query) = get(&value, "q") else { panic!() };
-            (query, get(&value, "r"))
-        })
-        .collect();
     if let Ok(out) = std::env::var("TSRS_CHECKER_SHAPES_OUT") {
         let mut text = String::new();
         text = ours.iter().fold(text, |mut text, (q, r)| {
@@ -874,17 +878,10 @@ fn session_responses_match_go_with_source31_document_identifiers() {
     }
     let mut diffs = Vec::new();
     let mut compared = 0;
-    let mut source31_overrides_compared = 0;
     for line in GO_SHAPES.lines().filter(|l| !l.is_empty()) {
         let v = json::unmarshal(line).unwrap();
         let Value::String(q) = get(&v, "q") else { panic!() };
-        let go = match source31_docid.get(&q) {
-            Some(response) => {
-                source31_overrides_compared += 1;
-                response.clone()
-            }
-            None => get(&v, "r"),
-        };
+        let go = get(&v, "r");
         let Some(rs) = ours.get(&q) else {
             diffs.push(format!("{q}: missing"));
             continue;
@@ -910,7 +907,6 @@ fn session_responses_match_go_with_source31_document_identifiers() {
         }
     }
     assert_eq!(compared, GO_SHAPES.lines().filter(|l| !l.is_empty()).count());
-    assert_eq!(source31_overrides_compared, source31_docid.len());
     assert!(
         diffs.is_empty(),
         "{} of {compared} differ from pinned Go:\n{}",
@@ -926,11 +922,8 @@ fn session_responses_match_go_with_source31_document_identifiers() {
 fn uint64_handles_above_2_pow_53_are_looked_up_exactly() {
     let s = session();
     let raw = |method: &str, params: String| s.call_raw(method, &params);
-    let sp = format!(
-        r#""snapshot":{},"project":{}"#,
-        json::marshal(&n(s.snapshot)).unwrap(),
-        json::marshal_string(&s.project)
-    );
+    let sp =
+        format!(r#""snapshot":{},"project":{}"#, json::marshal(&n(s.snapshot)).unwrap(), s.project);
     // Small handles are unaffected (and register the project's type/signature registries first).
     let t = s.call("getTypeAtPosition", &s.at("box:")).unwrap();
     assert_eq!(
@@ -959,7 +952,7 @@ fn uint64_handles_above_2_pow_53_are_looked_up_exactly() {
                 "getTypeAtPosition",
                 format!(
                     r#"{{"snapshot":{id},"project":{},"file":"/p/main.ts","position":0}}"#,
-                    json::marshal_string(&s.project)
+                    s.project
                 )
             ),
             Err(format!("api: client error: snapshot {id} not found"))
@@ -978,7 +971,7 @@ fn uint64_handles_above_2_pow_53_are_looked_up_exactly() {
                 "getTypeAtPosition",
                 format!(
                     r#"{{"snap\u0073hot":{id},"project":{},"file":"/p/main.ts","position":0}}"#,
-                    json::marshal_string(&s.project)
+                    s.project
                 )
             ),
             Err(format!("api: client error: snapshot {id} not found"))
@@ -998,7 +991,7 @@ fn uint64_handles_above_2_pow_53_are_looked_up_exactly() {
     // Nested symbol references (and import-adder actions) read their own exact literals, never a same-named
     // top-level field (core integration of predecode::exact_u64(object, key) at any depth).
     let snap = json::marshal(&n(s.snapshot)).unwrap();
-    let project = json::marshal_string(&s.project);
+    let project = s.project.to_string();
     for id in ["9007199254740993", "18446744073709551615"] {
         let symbol = format!(r#"{{"kind":1,"snapshot":{snap},"project":{project},"id":{id}}}"#);
         let missing =
@@ -1043,7 +1036,7 @@ fn uint64_handles_above_2_pow_53_are_looked_up_exactly() {
 }
 
 /// Full type responses (objectFlags included) for the cases in `testdata/go_probe/flags/cases.txt`, compared
-/// with `go_flags_b85298b6.jsonl` recorded by `TestTsrsCheckerFlags` (same fixtures, same request order).
+/// with `go_flags_e2bc2bcb.jsonl` recorded by `TestTsrsCheckerFlags` (same fixtures, same request order).
 #[test]
 fn type_flags_and_tuple_targets_match_pinned_go() {
     const CASES: &str = include_str!(concat!(
@@ -1052,7 +1045,7 @@ fn type_flags_and_tuple_targets_match_pinned_go() {
     ));
     const GOLDEN: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/checker/testdata/go_probe/go_flags_b85298b6.jsonl"
+        "/src/checker/testdata/go_probe/go_flags_e2bc2bcb.jsonl"
     ));
     let files = [
         (
@@ -1093,7 +1086,7 @@ fn type_flags_and_tuple_targets_match_pinned_go() {
     let s = S {
         session: std::sync::Arc::clone(&session),
         snapshot: 0.0,
-        project: String::new(),
+        project: 0.0,
         lines: Vec::new(),
     };
     let mut snaps = FxHashMap::default();
@@ -1109,19 +1102,16 @@ fn type_flags_and_tuple_targets_match_pinned_go() {
             .unwrap();
         let Value::Number(snap) = get(&r, "snapshot") else { panic!() };
         let Value::Array(projects) = get(&r, "projects") else { panic!() };
-        let Value::String(project) = get(&projects[0], "id") else { panic!() };
+        let Value::Number(project) = get(&projects[0], "handle") else { panic!() };
         (fx, (snap, project))
     }));
     let mut ours = Vec::new();
     for line in CASES.lines().filter(|l| !l.is_empty()) {
         let f: Vec<&str> = line.split('\t').collect();
         let (fx, file, needle, kind, method) = (f[0], f[1], f[2], f[3], f[4]);
-        let (snap, project) = snaps[fx].clone();
-        let program = session
-            .snapshot_data(snap as u64)
-            .unwrap()
-            .get_program(&tsrs_project::ID(project.clone()))
-            .unwrap();
+        let (snap, project) = snaps[fx];
+        let program =
+            session.snapshot_data(snap as u64).unwrap().get_program(project as u64).unwrap();
         let sf = program.get_source_file(&format!("/{fx}/{file}")).unwrap();
         let text = sf.text();
         let mut pos = text.find(needle).unwrap() + needle.len();
@@ -1143,9 +1133,10 @@ fn type_flags_and_tuple_targets_match_pinned_go() {
             }
             node = n.parent();
         }
-        let handle = session.node_handle_from(node.unwrap()).unwrap();
+        let handle =
+            crate::common::node_request_handle(&session.node_handle_from(node.unwrap()).unwrap());
         let sp = |extra: (&str, Value)| {
-            obj(&[("snapshot", n(snap)), ("project", Value::String(project.clone())), extra])
+            obj(&[("snapshot", n(snap)), ("project", Value::Number(project)), extra])
         };
         let (method, prop) = match method.split_once("+prop:") {
             Some((m, p)) => (m, Some(p)),
@@ -1158,7 +1149,7 @@ fn type_flags_and_tuple_targets_match_pinned_go() {
                 "getPropertyOfType",
                 &obj(&[
                     ("snapshot", n(snap)),
-                    ("project", Value::String(project.clone())),
+                    ("project", Value::Number(project)),
                     ("type", get(&r, "id")),
                     ("name", Value::String(prop.into())),
                 ]),

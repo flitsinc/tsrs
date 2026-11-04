@@ -321,7 +321,12 @@ pub(crate) fn exact_build_options_ints(value: &Value, options: &mut tsrs_core::B
 /// requestfilesystem.RequestFileSystem (decoded by `requestfs.rs` from the parsed value): Go decodes the whole
 /// struct first, so a wrong JSON kind anywhere in it is an invalid request. `null` is the zero value (a null
 /// file content is "", a null path element is ""), as in Go.
-fn check_request_file_system(go_type: &str, o: &JsonMap, pointer: &str) -> Result<(), String> {
+fn check_request_file_system(
+    go_type: &str,
+    o: &JsonMap,
+    pointer: &str,
+    lexemes: &FxHashMap<String, String>,
+) -> Result<(), String> {
     if base_type(go_type) != "requestfilesystem.RequestFileSystem" {
         return Ok(());
     }
@@ -362,6 +367,19 @@ fn check_request_file_system(go_type: &str, o: &JsonMap, pointer: &str) -> Resul
     };
     if let Some(v) = o.get("kind").filter(|v| !matches!(v, Value::Null | Value::String(_))) {
         return err(v, &format!("{pointer}/kind"), "requestfilesystem.Kind");
+    }
+    if let Some(v) = o.get("snapshot").filter(|v| !matches!(v, Value::Null)) {
+        let path = format!("{pointer}/snapshot");
+        if !int_ok(v, lexemes.get(&path).map(String::as_str), IntRange::U64) {
+            return err(v, &path, "uint64");
+        }
+    }
+    if let Some(v) = o.get("fileSystem").filter(|v| !matches!(v, Value::Null)) {
+        let path = format!("{pointer}/fileSystem");
+        let Value::Object(nested) = v else {
+            return err(v, &path, "requestfilesystem.RequestFileSystem");
+        };
+        check_request_file_system(go_type, nested, &path, lexemes)?;
     }
     map("files", "map[string]string", &|v, p| {
         if matches!(v, Value::String(_)) { Ok(()) } else { err(v, p, "string") }
@@ -435,7 +453,7 @@ fn check_field(
         if let Value::Object(o) = v {
             check_struct(spec.go_type, o, pointer, lexemes)?;
             check_external_integers(spec.go_type, o, pointer.as_str(), lexemes)?;
-            check_request_file_system(spec.go_type, o, pointer.as_str())?;
+            check_request_file_system(spec.go_type, o, pointer.as_str(), lexemes)?;
         }
         return Ok(());
     }

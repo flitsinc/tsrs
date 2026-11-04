@@ -22,6 +22,7 @@ import {
     SyntaxKind,
 } from "tsrs/ast";
 import { cloneNode } from "tsrs/ast/factory";
+import { createFileSystemFromSnapshot } from "tsrs/fs";
 import { toRootedFilePath } from "tsrs/path";
 import type {
     APIRequest,
@@ -170,6 +171,7 @@ const privateGeneratorGetters = new Set([
     "Checker.getWellKnownSignatures",
     "Checker.getWellKnownSymbols",
     "NodeHandle.fetchOwnerFile",
+    "NodeHandle.resolveInFile",
     "Program.disposeWorker",
     "Program.fetchSourceFileMetadata",
     "Program.getSourceFileWorker",
@@ -297,6 +299,7 @@ function assertSignatureArraysEquivalent(actual: readonly Signature[], expected:
 function assertNodeHandlesEquivalent(actual: NodeHandle, expected: NodeHandle, message?: string): void {
     assert.equal(actual.index, expected.index, message);
     assert.equal(actual.kind, expected.kind, message);
+    assert.equal(actual.sourceFileId, expected.sourceFileId, message);
     assert.equal(actual.path, expected.path, message);
 }
 
@@ -1788,8 +1791,12 @@ describe("API - generator batching", { concurrency: areTestsFiltered() }, () => 
             runParityBatch(api, cases);
             assert.deepEqual(temporaryProjects, ["/tsconfig.json", "/tsconfig.json"]);
 
-            const snapshotGeneratorAPI = spawnAPI(parityFiles);
-            const snapshotSyncAPI = spawnAPI(parityFiles);
+            const snapshotFiles = {
+                ...parityFiles,
+                "/tsconfig.json": JSON.stringify({ compilerOptions: { noLib: true }, files: ["src/syntax.ts"] }),
+            };
+            const snapshotGeneratorAPI = spawnAPI(snapshotFiles);
+            const snapshotSyncAPI = spawnAPI(snapshotFiles);
             try {
                 const generatorBase = snapshotGeneratorAPI.batch(snapshotGeneratorAPI.createSnapshot.gen({ openProjects: ["/tsconfig.json"] }))[0];
                 const syncBase = snapshotSyncAPI.createSnapshot({ openProjects: ["/tsconfig.json"] });
@@ -1797,6 +1804,16 @@ describe("API - generator batching", { concurrency: areTestsFiltered() }, () => 
                 const syncUpdated = syncBase.update({});
                 assertSnapshotsEquivalent(generatorUpdated, syncUpdated, "Snapshot.update");
                 exercisedMethods.add("Snapshot.update");
+                const changes = {
+                    fileSystem: { kind: "layer", files: { "/src/syntax.ts": "export const fixed = true;" } },
+                } as const;
+                const generatorExtras = snapshotGeneratorAPI.batch(generatorUpdated.update.gen(changes))[0];
+                const syncExtras = syncUpdated.update(changes);
+                const snapshotChanges = { prepareAutoImports: "/src/syntax.ts", openFiles: ["/src/syntax.ts"] } as const;
+                const generatorOverlay = snapshotGeneratorAPI.batch(generatorBase.update.gen({ ...snapshotChanges, fileSystem: createFileSystemFromSnapshot(generatorExtras) }))[0];
+                const syncOverlay = syncBase.update({ ...snapshotChanges, fileSystem: createFileSystemFromSnapshot(syncExtras) });
+                assertSnapshotsEquivalent(generatorOverlay, syncOverlay, "Snapshot.update with a snapshot filesystem");
+                assert.equal(generatorOverlay.getConfiguredProject("/tsconfig.json")!.program.getSourceFile("/src/syntax.ts")!.text, "export const fixed = true;");
             }
             finally {
                 snapshotGeneratorAPI.close();

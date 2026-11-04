@@ -289,7 +289,7 @@ impl Owner<'_> {
     fn respond(&self, host: &dyn CheckerHost, symbol: P<Symbol>) -> CheckerResult<Value> {
         match self {
             Owner::File(_) => file_owned_response(host, symbol),
-            Owner::Snapshot(sd) => sd.symbol_response(symbol, &sd.project),
+            Owner::Snapshot(sd) => sd.symbol_response(symbol, sd.project),
         }
     }
 }
@@ -309,8 +309,7 @@ fn resolve_symbol_reference<'h>(
 ) -> CheckerResult<(P<Symbol>, Owner<'h>)> {
     match r.kind {
         SYMBOL_OWNER_KIND_FILE => {
-            let Some(descriptor) =
-                r.file.as_ref().filter(|_| r.snapshot == 0 && r.project.is_empty())
+            let Some(descriptor) = r.file.as_ref().filter(|_| r.snapshot == 0 && r.project == 0)
             else {
                 return Err(CheckerError::client("invalid file symbol reference"));
             };
@@ -321,7 +320,7 @@ fn resolve_symbol_reference<'h>(
             Ok((symbol, Owner::File(lease)))
         }
         SYMBOL_OWNER_KIND_SNAPSHOT => {
-            if r.file.is_some() || r.snapshot == 0 || r.project.is_empty() {
+            if r.file.is_some() || r.snapshot == 0 || r.project == 0 {
                 return Err(CheckerError::client("invalid snapshot symbol reference"));
             }
             let sd = SnapshotCtx::new(host, r.snapshot, r.project)?;

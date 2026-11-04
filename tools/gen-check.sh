@@ -17,6 +17,7 @@ generators=(
   "node tools/gen-ast/gen-ast.ts"
   "node tools/gen-ast/gen-flags.ts"
   "node crates/tsrs_api_codec/gen/gen-codec.ts"
+  "node tools/gen-api-params/generate.mjs"
   "cargo run --quiet --locked -p tsrs_generate_stringutil -- --write"
   "node tools/gen-diagnostics/gen.mjs"
   "node tools/gen-diagnostics/gen-locales.mjs"

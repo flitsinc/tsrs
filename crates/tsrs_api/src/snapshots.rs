@@ -48,6 +48,7 @@ fn project_response(p: &Project) -> Value {
         (p.kind == tsrs_project::Kind::Configured).then(|| s(p.config_file_name().to_string()));
     Obj::new()
         .set("id", s(p.id().0))
+        .set("handle", Value::Number(p.handle() as f64))
         .set_opt("configFileName", config_file_name)
         .set("currentDirectory", s(p.current_directory()))
         .set("dirty", b(p.is_dirty()))
@@ -600,14 +601,47 @@ impl Session {
         &self,
         p: Params,
         base: Option<&RequestFileSystem>,
+        base_contents: &dyn tsrs_vfs::FS,
         file_changes: &mut FileChangeSummary,
     ) -> ApiResult<Option<(Arc<RequestFileSystem>, bool)>> {
         if !p.has("fileSystem") {
             return Ok(None);
         }
         let params = RequestParams::parse(p.get("fileSystem")).map_err(ApiError::client)?;
+        let replace = params.replaces_file_system();
+        let mut params = &params;
+        let rebased;
+        let mut base = base;
+        if params.kind == requestfs::Kind::Snapshot {
+            if params.has_entries() {
+                return Err(ApiError::client(
+                    "snapshot filesystem entries must be supplied in fileSystem",
+                ));
+            }
+            if params.file_system.as_ref().is_some_and(|fs| {
+                fs.kind != requestfs::Kind::Layer && fs.kind != requestfs::Kind::Full
+            }) {
+                return Err(ApiError::client(
+                    "only a layer or full filesystem can be applied on top of a snapshot filesystem",
+                ));
+            }
+            let source = self.snapshot_data(params.snapshot)?;
+            rebased = source.file_system.as_deref().map(|fs| {
+                requestfs::rebase(fs, ScopedFs::wrap(self.fs()), base, base_contents, file_changes)
+            });
+            base = rebased.as_ref().or(base);
+            let Some(extra) = &params.file_system else {
+                return Ok(base.map(|fs| (Arc::new(fs.clone()), replace)));
+            };
+            params = extra;
+        }
+        if params.snapshot != 0 || params.file_system.is_some() {
+            return Err(ApiError::client(
+                "snapshot and fileSystem are only valid for a snapshot filesystem",
+            ));
+        }
         let fs = requestfs::new_for_update(
-            &params,
+            params,
             ScopedFs::wrap(self.fs()),
             base,
             self.current_directory(),
@@ -615,7 +649,7 @@ impl Session {
         )
         .map_err(ApiError::client)?;
         // Go sets ReplaceFileSystem from the *request's* kind, not the compacted result's.
-        Ok(Some((Arc::new(fs), params.kind == requestfs::Kind::Full)))
+        Ok(Some((Arc::new(fs), replace)))
     }
 
     pub(crate) fn handle_create_snapshot(&self, p: Params) -> ApiResult<Value> {
@@ -626,17 +660,18 @@ impl Session {
         let prepare_auto_imports = self.snapshot_preferences_and_auto_imports(p, &mut req)?;
         let open_state = self.reconcile_snapshot_opens(&mut req, &OpenState::default());
         let mut file_changes = self.to_file_change_summary(p.get("fileNotifications"))?;
-        let snapshot_fs =
-            if let Some((fs, replace)) = self.request_file_system(p, None, &mut file_changes)? {
-                req.layered_file_system =
-                    Some(Arc::clone(&fs) as Arc<dyn tsrs_project::LayeredFileSystem>);
-                req.replace_file_system = replace;
-                Some(fs)
-            } else {
-                // Attribution only: same host filesystem, never a replacement.
-                req.file_system = Some(ScopedFs::wrap(self.snapshot_host_fs()));
-                None
-            };
+        let snapshot_fs = if let Some((fs, replace)) =
+            self.request_file_system(p, None, &*self.fs(), &mut file_changes)?
+        {
+            req.layered_file_system =
+                Some(Arc::clone(&fs) as Arc<dyn tsrs_project::LayeredFileSystem>);
+            req.replace_file_system = replace;
+            Some(fs)
+        } else {
+            // Attribution only: same host filesystem, never a replacement.
+            req.file_system = Some(ScopedFs::wrap(self.snapshot_host_fs()));
+            None
+        };
         let ctx = tsrs_core::context::Context::background();
         let root = self.snapshot_host.new_root_snapshot();
         // The root reference is released even if building a program unwinds (see `Snapshot::clone_snapshot`).
@@ -689,8 +724,12 @@ impl Session {
         let prepare_auto_imports = self.snapshot_preferences_and_auto_imports(changes, &mut req)?;
         let open_state = self.reconcile_snapshot_opens(&mut req, &base.open_state);
         let mut file_changes = self.to_file_change_summary(changes.get("fileNotifications"))?;
-        let new_fs =
-            self.request_file_system(changes, base.file_system.as_deref(), &mut file_changes)?;
+        let new_fs = self.request_file_system(
+            changes,
+            base.file_system.as_deref(),
+            &*base.snapshot.fs(),
+            &mut file_changes,
+        )?;
         let replaced = new_fs.as_ref().is_some_and(|(_, replace)| *replace);
         let snapshot_fs = new_fs.map(|(fs, _)| fs).or_else(|| base.file_system.clone());
         if let Some(fs) = &snapshot_fs {

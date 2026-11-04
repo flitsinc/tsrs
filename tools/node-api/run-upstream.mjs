@@ -51,6 +51,7 @@ if (!opts.binary || !opts.label) usage("--binary and --label are required");
 if (!/^[\w.-]+$/.test(opts.label)) usage("label must be [A-Za-z0-9_.-]+");
 if (!fs.existsSync(opts.binary)) usage(`binary not found: ${opts.binary}`);
 if (!["upstream", "parity", "all"].includes(opts.suite)) usage(`bad --suite ${opts.suite}`);
+if (process.env.TS_API_TEST_WASM) usage("this harness validates a native --binary; unset TS_API_TEST_WASM");
 // Goldens are recorded from the source-built or verified published Go oracle, never from a candidate.
 const oracleExe = path.join(here, ".work", "oracle", process.platform === "win32" ? "tsc.exe" : "tsc");
 const publishedOracleExe = path.join(here, ".work", "published-oracle", path.basename(oracleExe));
@@ -82,7 +83,7 @@ fs.rmSync(out, { recursive: true, force: true });
 const tree = path.join(out, "tree");
 const pkg = path.join(tree, "packages", "typescript");
 fs.mkdirSync(pkg, { recursive: true });
-for (const entry of ["package.json", "src", "lib", "vendor", "test", "tsconfig.base.json", "tsconfig.json"]) {
+for (const entry of ["package.json", "src", "enums", "lib", "vendor", "test", "tsconfig.base.json", "tsconfig.json"]) {
     const src = path.join(refPkg, entry);
     if (fs.existsSync(src)) fs.cpSync(src, path.join(pkg, entry), { recursive: true });
 }
@@ -96,6 +97,16 @@ fs.mkdirSync(nm);
 for (const entry of fs.readdirSync(refModules)) {
     if (entry === "@typescript" || entry.startsWith(".")) continue;
     fs.symlinkSync(path.join(refModules, entry), path.join(nm, entry));
+}
+// Native API helpers import test/wasm.ts even when TS_API_TEST_WASM is unset. Only its source URL export
+// is needed; no Go WASM artifact is loaded by native-server suites.
+if (fs.existsSync(path.join(refPkg, "src", "wasm"))) {
+    const wasmPackage = path.join(opts.ref, "packages", "typescript-wasip1-wasm");
+    if (!fs.existsSync(path.join(wasmPackage, "package.json"))) {
+        usage("pinned reference lacks packages/typescript-wasip1-wasm; widen its sparse checkout before running native API tests");
+    }
+    fs.mkdirSync(path.join(nm, "@typescript"), { recursive: true });
+    fs.symlinkSync(wasmPackage, path.join(nm, "@typescript", "typescript-wasip1-wasm"), "junction");
 }
 // The upstream client spawns built/local/tsc when run from source (lib/getExePath.js).
 const local = path.join(tree, "built", "local");
@@ -126,12 +137,17 @@ for (const f of opts.filters) {
     if (!any(["test/sync", "test/async", "test/parity"])) usage(`--filter ${f} matches no test file`);
 }
 const files = [];
+const excludedSuites = [];
 const dirs = { upstream: ["test/sync", "test/async"], parity: ["test/parity"], all: ["test/sync", "test/async", "test/parity"] }[opts.suite];
 for (const d of dirs) {
     for (const f of fs.readdirSync(path.join(pkg, d)).sort()) {
         if (!f.endsWith(".test.ts")) continue;
         const rel = `${d}/${f}`;
         if (opts.filters.length && !opts.filters.some(s => matchesFilter(rel, s))) continue;
+        if (rel === "test/sync/wasm.test.ts") {
+            excludedSuites.push({ file: rel, reason: "WASM artifact/reactor suite; this harness validates the supplied native server binary" });
+            continue;
+        }
         files.push(rel);
     }
 }
@@ -237,6 +253,7 @@ const summary = {
     tsRef: refHead,
     suite: opts.suite,
     files: files.length,
+    excludedSuites,
     tests: leaves.length,
     pass: leaves.filter(r => r.ok && !r.skip && !r.todo).length,
     fail: leaves.filter(r => !r.ok && !r.todo).length,

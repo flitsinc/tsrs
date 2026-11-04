@@ -36,6 +36,9 @@ fi
 if [[ "$(git -C "$ref" config --get core.sparseCheckout || true)" == "true" ]]; then
     # Cone mode includes root files automatically; sparse-checkout add accepts directories.
     git -C "$ref" sparse-checkout add packages/typescript tsc
+    if git -C "$ref" cat-file -e "${pin}:packages/typescript-wasip1-wasm/package.json" 2>/dev/null; then
+        git -C "$ref" sparse-checkout add packages/typescript-wasip1-wasm
+    fi
 fi
 
 if [[ ! -d "$ref/packages/typescript/node_modules/tinybench" ]]; then

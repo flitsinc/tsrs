@@ -68,9 +68,11 @@ pub(crate) fn handle(
         CheckerResponse::Json(value) => json_response(&value),
         CheckerResponse::EncodedNode(bytes) => {
             if session.binary_responses() {
-                Ok(Response::Binary(bytes))
-            } else {
+                Ok(Response::Binary(bytes.unwrap_or_default()))
+            } else if let Some(bytes) = bytes {
                 json_response(&Obj::new().set("data", Value::String(base64_encode(&bytes))).build())
+            } else {
+                json_response(&Value::Null)
             }
         }
     }))

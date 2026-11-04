@@ -11,7 +11,6 @@ use tsrs_compiler::{EmitOnly, EmitOptions, EmitResult, Program, WriteFileData};
 use tsrs_core::P;
 use tsrs_core::context::{CheckerLifetime, Context, with_checker_lifetime};
 use tsrs_core::json::Value;
-use tsrs_project::ID as ProjectID;
 
 use crate::diagnostics::diagnostic_responses;
 use crate::handler::{ApiError, ApiResult};
@@ -49,7 +48,7 @@ impl Session {
         p: Params,
     ) -> ApiResult<(std::sync::Arc<crate::session::SnapshotData>, &'static Program)> {
         let sd = self.snapshot_data(p.u64("snapshot")?)?;
-        let program = sd.get_program(&ProjectID(p.str("project")?.to_string()))?;
+        let program = sd.get_program(p.u64("project")?)?;
         Ok((sd, program))
     }
 
@@ -96,12 +95,12 @@ impl Session {
 
     pub(crate) fn handle_get_global_diagnostics(&self, p: Params) -> ApiResult<Value> {
         let sd = self.snapshot_data(p.u64("snapshot")?)?;
-        let id = ProjectID(p.str("project")?.to_string());
+        let id = p.u64("project")?;
         let proj = sd
             .snapshot
             .project_collection
-            .get_project(&id)
-            .ok_or_else(|| ApiError::client(format!("project {} not found", id.0)))?;
+            .get_project_by_handle(id)
+            .ok_or_else(|| ApiError::client(format!("project {id} not found")))?;
         let program =
             proj.get_program().ok_or_else(|| ApiError::client("project has no program"))?;
         let ctx = with_checker_lifetime(&Context::background(), CheckerLifetime::Diagnostics);

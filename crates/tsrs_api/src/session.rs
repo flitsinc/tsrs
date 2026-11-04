@@ -18,7 +18,7 @@ use tsrs_api_transport::strictjson::DecodeError;
 use tsrs_compiler::Program;
 use tsrs_core::context::Context;
 use tsrs_core::json::{self, JsonMap, Value};
-use tsrs_project::{ID as ProjectID, Snapshot, SnapshotHost};
+use tsrs_project::{Handle, Snapshot, SnapshotHost};
 use tsrs_vfs::FS;
 
 use crate::checker::{self, CheckerSnapshotState};
@@ -89,12 +89,12 @@ impl Drop for SnapshotData {
 
 impl SnapshotData {
     /// Go `snapshotData.getProject` / `getProgram`.
-    pub fn get_program(&self, project: &ProjectID) -> ApiResult<&'static Program> {
+    pub fn get_program(&self, project: Handle) -> ApiResult<&'static Program> {
         let proj = self
             .snapshot
             .project_collection
-            .get_project(project)
-            .ok_or_else(|| ApiError::client(format!("project {} not found", project.0)))?;
+            .get_project_by_handle(project)
+            .ok_or_else(|| ApiError::client(format!("project {project} not found")))?;
         proj.get_program().ok_or_else(|| ApiError::client("project has no program"))
     }
 }

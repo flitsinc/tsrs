@@ -42,10 +42,7 @@ fn merged_interface_diagnostics_finish_and_report_on_first_declaration() {
                 Value::Number(n) => *n as u64,
                 v => panic!("{v:?}"),
             };
-            let sp = format!(
-                "\"snapshot\":{snapshot},\"project\":{}",
-                quote(str_of(get(&r, "operation.createdPrograms.0")))
-            );
+            let sp = format!("\"snapshot\":{snapshot},\"project\":{}", project_handle(&r));
             if round % 3 == 0 {
                 assert_eq!(
                     call(&s, "getGlobalDiagnostics", &format!("{{{sp}}}")),
