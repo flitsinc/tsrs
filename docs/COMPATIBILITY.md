@@ -3,6 +3,15 @@
 Release 0.21.0 targets TypeScript 7.1 beta. The goal is 100% conformance; this page records the current
 evidence and known gaps. See the [release notes](releases/0.21.0.md) for installation and changes.
 
+The fork's TypeScript-main catch-up includes shared class/interface member layouts from
+[#64915](https://github.com/microsoft/TypeScript/pull/64915). Individual members are instantiated on demand
+in both checker modes; `keyof` and flag-only queries read the uninstantiated layout. The existing fast-mode
+switches continue to control the port's additional mapped-member and related optimizations.
+Named declared members also remain accessible during recursive type resolution, following
+[#65059](https://github.com/microsoft/TypeScript/pull/65059); the
+[`recursive-declared-members` regression](../testdata/regressions/recursive-declared-members) checks recursive
+schema input inference without accepting `any`.
+
 ## Conformance
 
 tsrs is a function-by-function port of the Go implementation of TypeScript (`microsoft/TypeScript`, commit

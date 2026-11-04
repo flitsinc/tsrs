@@ -380,8 +380,8 @@ impl Checker {
                 result
                     .object_flags
                     .set(result.object_flags.get_lazy() | ObjectFlags::MembersResolved);
-                result.as_object_type().set_members(resolved.members());
-                result.as_object_type().set_properties(resolved.properties());
+                result.as_object_type().set_members(resolved.members(self));
+                result.as_object_type().set_properties(resolved.properties(self));
                 return result;
             }
         } else if t.flags().intersects(TypeFlags::Intersection) {

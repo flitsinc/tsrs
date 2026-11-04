@@ -57,9 +57,10 @@ understand, read both versions and the Go source; do not blindly take one side.
 
 ## Fast mode and reference defaults
 
-tsrs ports microsoft/TypeScript#64475 + #64526 (lazy member tables, `tsrs_core::lazymembers`, notes/lazy-members.md)
-and enables them with **`--fast`, `TSRS_FAST=1` or `--lazyMembers`**. Eager members are the default, as in the pinned
-reference. `--noLazyMembers` / `TSRS_LAZY_MEMBERS=0` overrides the fast preset. An explicit `--fast false` disables
+tsrs follows microsoft/TypeScript#64915: class and interface types share member layouts and instantiate individual
+members on demand in every mode. The additional mapped-member and related optimizations in
+`tsrs_core::lazymembers` are enabled with **`--fast`, `TSRS_FAST=1` or `--lazyMembers`**.
+`--noLazyMembers` / `TSRS_LAZY_MEMBERS=0` overrides those optimizations. An explicit `--fast false` disables
 the environment preset but leaves per-feature overrides in effect. See [performance options](USAGE.md#performance-options)
 for the full preset and its diagnostic, memory, counter and cache-reuse effects.
 
@@ -71,8 +72,8 @@ The experimental shared type graph also remains off: it requires both a build wi
 `--features tsrs_core/shared-graph` and `TSRS_SHARED_GRAPH=1`
 ([implementation](../crates/tsrs_compiler/src/sharedgraph.rs)).
 
-The conformance gate runs Go history with eager members (`TSRS_FAST=0`) and canonical history with lazy members
-(`TSRS_FAST=1`); neither may lose passes. The raw harness retains single-threaded programs unless
+The conformance gate runs Go history (`TSRS_FAST=0`) and canonical history with the additional lazy optimizations
+(`TSRS_FAST=1`); both use shared class/interface member layouts, and neither may lose passes. The raw harness retains single-threaded programs unless
 `TS_TEST_PROGRAM_SINGLE_THREADED=false` or `tsrs-test --checkers N` enables parallel checking. It still accepts
 `TSRS_HISTORY=canonical` as a legacy way to select the optimized mode. Explicit Go history/assignment overrides the
 fast preset's history without disabling its lazy members.

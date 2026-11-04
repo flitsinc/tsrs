@@ -790,7 +790,7 @@ impl Checker {
         let mut total = 0;
         for (i, &t) in types.iter().enumerate() {
             if Some(i) != skipped {
-                let props = self.get_properties_of_type(t);
+                let props = self.get_layout_properties_of_type(t);
                 total += props.len();
                 counts.lists.push(props);
             }

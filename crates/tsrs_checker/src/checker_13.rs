@@ -1445,7 +1445,7 @@ impl Checker {
     // checker.go:26951
     fn is_empty_resolved_type(&self, t: &'static StructuredType) -> bool {
         !std::ptr::eq(t, self.any_function_type.as_structured_type())
-            && t.properties().is_empty()
+            && !t.has_properties()
             && t.signatures().is_empty()
             && t.index_infos().is_empty()
     }
@@ -2050,7 +2050,7 @@ impl Checker {
         {
             origin = Some(self.new_index_type(t, IndexFlags::None));
         }
-        let props = self.get_properties_of_type(t);
+        let props = self.get_layout_properties_of_type(t);
         let index_infos = self.get_index_infos_of_type(t);
         let mut types: Vec<P<Type>> = Vec::with_capacity(props.len() + index_infos.len());
         types.extend(
@@ -2900,7 +2900,7 @@ impl Checker {
                     } else if index_type.flags().intersects(TypeFlags::Number | TypeFlags::String) {
                         let mut types: Vec<P<Type>> = object_type
                             .as_structured_type()
-                            .properties()
+                            .properties(self)
                             .iter()
                             .map(|&prop| self.get_type_of_symbol(prop))
                             .collect();
@@ -3332,6 +3332,7 @@ impl Checker {
     // checker.go:27835
     pub(crate) fn is_string_index_signature_only_type_worker(&mut self, t: P<Type>) -> bool {
         t.flags().intersects(TypeFlags::Object)
+            && !t.object_flags().intersects(ObjectFlags::ClassOrInterface | ObjectFlags::Reference)
             && !self.is_generic_mapped_type(t)
             && !self.has_properties_of_structured_type(t)
             && self.get_index_infos_of_type(t).len() == 1
