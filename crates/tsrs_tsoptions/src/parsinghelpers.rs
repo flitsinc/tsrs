@@ -485,6 +485,9 @@ pub fn parse_compiler_options_worker(
         "rewriteRelativeImportExtensions" => {
             all_options.rewrite_relative_import_extensions = parse_tristate(value);
         }
+        "disableDynamicImportExtensionRewriting" => {
+            all_options.disable_dynamic_import_extension_rewriting = parse_tristate(value);
+        }
         "rootDir" => all_options.root_dir = parse_string(value),
         "rootDirs" => all_options.root_dirs = parse_string_array(value),
         "removeComments" => all_options.remove_comments = parse_tristate(value),
@@ -757,6 +760,7 @@ macro_rules! for_each_compiler_options_field {
             resolve_package_json_exports: "resolvePackageJsonExports",
             resolve_package_json_imports: "resolvePackageJsonImports",
             remove_comments: "removeComments",
+            disable_dynamic_import_extension_rewriting: "disableDynamicImportExtensionRewriting",
             rewrite_relative_import_extensions: "rewriteRelativeImportExtensions",
             react_namespace: "reactNamespace",
             root_dir: "rootDir",

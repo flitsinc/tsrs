@@ -313,6 +313,8 @@ impl ESModuleTransformer {
     // esmodule.go:253
     fn visit_call_expression(&self, node: P<Node>) -> P<Node> {
         if self.compiler_options.rewrite_relative_import_extensions.is_true()
+            && (!self.compiler_options.disable_dynamic_import_extension_rewriting.is_true()
+                || node.arguments().first().is_some_and(|arg| ast::is_string_literal_like(*arg)))
             && (ast::is_import_call(node) && !node.arguments().is_empty()
                 || ast::is_in_js_file(node)
                     && ast::is_require_call(node, false /*requireStringLiteralLikeArgument*/))

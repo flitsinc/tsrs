@@ -320,7 +320,7 @@ pub(crate) static COMMON_OPTIONS_WITH_BUILD: LazyLock<Vec<&'static CommandLineOp
         ]
     });
 
-static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
+static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 98] = [
     CommandLineOption {
         name: "all",
         kind: CommandLineOptionKind::Boolean,
@@ -935,6 +935,14 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
+        name: "disableDynamicImportExtensionRewriting",
+        kind: CommandLineOptionKind::Boolean,
+        category: Some(&diagnostics::MODULES),
+        description: Some(&diagnostics::DISABLE_RUNTIME_REWRITING_OF_FILE_EXTENSIONS_IN_NON_LITERAL_IMPORT_AND_REQUIRE_CALLS_WHEN_REWRITE_RELATIVE_IMPORT_EXTENSIONS_IS_ENABLED),
+        default_value_description: DefaultValueDescription::Bool(false),
+        ..CommandLineOption::DEFAULT
+    },
+    CommandLineOption {
         name: "resolvePackageJsonExports",
         kind: CommandLineOptionKind::Boolean,
         affects_module_resolution: true,
@@ -1411,6 +1419,7 @@ pub(crate) static OPTIONS_FOR_COMPILER: LazyLock<Vec<&'static CommandLineOption>
             &OPTIONS_FOR_COMPILER_ITEMS[94],
             &OPTIONS_FOR_COMPILER_ITEMS[95],
             &OPTIONS_FOR_COMPILER_ITEMS[96],
+            &OPTIONS_FOR_COMPILER_ITEMS[97],
         ]
     });
 // END GENERATED
