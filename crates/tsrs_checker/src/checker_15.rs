@@ -976,7 +976,8 @@ impl Checker {
             && t.object_flags_lazy() & (ObjectFlags::MembersResolved | ObjectFlags::Mapped)
                 == ObjectFlags::MembersResolved
             && !is_tuple_type(t)
-            && t.as_structured_type().members().is_none_or(|m| m.lookup_hashed(key).is_none())
+            && t.as_structured_type().get_lazy_state().is_none()
+            && t.as_structured_type().raw_members().is_none_or(|m| m.lookup_hashed(key).is_none())
             && self.index_infos_of_structured_type(t).is_empty()
             && !self.may_be_augment_member(key)
     }
@@ -1241,7 +1242,7 @@ impl Checker {
             }));
             let mut discriminant_members = Vec::new();
             discriminant_members.extend(
-                self.get_properties_of_type(contextual_type).iter().copied().filter(|&s| {
+                self.get_layout_properties_of_type(contextual_type).iter().copied().filter(|&s| {
                     let node_members = node.symbol().unwrap().members();
                     s.flags().intersects(SymbolFlags::Optional)
                         && node_members.is_none_or(|m| m.lookup(s.name()).is_none())
@@ -2479,7 +2480,7 @@ impl Checker {
                 // (See #44364 and #45031 for relevant implementation PRs)
                 if meta_prop.keyword_token == Kind::ImportKeyword && node.text() == "meta" {
                     let import_meta_type = self.get_global_import_meta_expression_type();
-                    return import_meta_type.as_object_type().members()?.lookup("meta");
+                    return import_meta_type.as_object_type().get_member(self, "meta");
                 }
                 // no other meta properties are valid syntax, thus no others should have symbols
                 return None;

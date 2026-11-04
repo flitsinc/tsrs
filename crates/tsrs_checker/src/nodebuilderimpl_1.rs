@@ -685,9 +685,10 @@ impl NodeBuilderImpl {
             c.object_types_without_abstract_construct_signatures.insert(t, t);
             return t;
         }
+        let members = st.members(c);
         let type_copy = c.new_anonymous_type(
             t.symbol(),
-            st.members(),
+            members,
             st.call_signatures(),
             &construct_signatures,
             st.index_infos(),

@@ -1085,6 +1085,13 @@ pub struct VarianceStackEntry {
     pub(crate) type_parameters: &'static [P<Type>],
 }
 
+pub struct ResolvingObjectType {
+    pub(crate) t: P<Type>,
+    pub(crate) mapper: Option<P<TypeMapper>>,
+    pub(crate) base_types: &'static [P<Type>],
+    pub(crate) resolved_members: SymbolTable,
+}
+
 pub(crate) const MAX_SERIALIZATION_LEVEL: u32 = 2;
 
 // Checker
@@ -1252,6 +1259,9 @@ pub struct Checker {
     pub(crate) pattern_for_type: FxHashMap<P<Type>, P<Node>>,
     pub(crate) lazy_member_tables:
         crate::basedmap::Based<FxHashMap<P<Type>, P<LazyMemberTable>>, P<Type>>,
+    pub(crate) member_layout_cache:
+        crate::basedmap::Based<FxHashMap<CacheHashKey, P<MemberLayout>>, CacheHashKey>,
+    pub(crate) member_layout_count: u32,
     /// Per generic target, what `prepare_lazy_members` learned about its declared members for good
     /// (`lazy_unaffected_members`).
     pub(crate) lazy_unaffected: FxHashMap<P<Type>, crate::checker_09::LazyUnaffected>,
@@ -1450,6 +1460,7 @@ pub struct Checker {
     pub(crate) awaited_type_stack: Vec<P<Type>>,
     pub(crate) reverse_mapped_source_stack: Vec<P<Type>>,
     pub(crate) reverse_mapped_target_stack: Vec<P<Type>>,
+    pub(crate) resolving_object_type_stack: Vec<ResolvingObjectType>,
     pub(crate) reverse_expanding_flags: ExpandingFlags,
     pub(crate) free_relater: Option<P<Relater>>,
     pub(crate) subtype_relation: P<Relation>,
@@ -1767,6 +1778,8 @@ pub fn new_checker(program: &'static dyn Program) -> Box<Checker> {
         reg_exp_scanner: None,
         pattern_for_type: FxHashMap::default(),
         lazy_member_tables: crate::basedmap::Based::default(),
+        member_layout_cache: crate::basedmap::Based::default(),
+        member_layout_count: 0,
         lazy_unaffected: FxHashMap::default(),
         object_types_without_abstract_construct_signatures: FxHashMap::default(),
         structured_type_base_constraints: FxHashMap::default(),
@@ -1918,6 +1931,7 @@ pub fn new_checker(program: &'static dyn Program) -> Box<Checker> {
         awaited_type_stack: Vec::new(),
         reverse_mapped_source_stack: Vec::new(),
         reverse_mapped_target_stack: Vec::new(),
+        resolving_object_type_stack: Vec::new(),
         reverse_expanding_flags: ExpandingFlags::None,
         free_relater: None,
         subtype_relation: P::new(Relation::default()),
@@ -2309,6 +2323,8 @@ impl Checker {
             reg_exp_scanner: None,
             pattern_for_type: base.pattern_for_type.clone(),
             lazy_member_tables: crate::basedmap::Based::over(&base.lazy_member_tables),
+            member_layout_cache: crate::basedmap::Based::over(&base.member_layout_cache),
+            member_layout_count: base.member_layout_count,
             lazy_unaffected: FxHashMap::default(),
             object_types_without_abstract_construct_signatures: base
                 .object_types_without_abstract_construct_signatures
@@ -2466,6 +2482,7 @@ impl Checker {
             awaited_type_stack: Vec::new(),
             reverse_mapped_source_stack: Vec::new(),
             reverse_mapped_target_stack: Vec::new(),
+            resolving_object_type_stack: Vec::new(),
             reverse_expanding_flags: base.reverse_expanding_flags,
             free_relater: None,
             subtype_relation: P::new(Relation::default()),
@@ -2598,6 +2615,7 @@ impl Checker {
                 && self.variance_stack.is_empty()
                 && self.call_resolution_stack.is_empty()
                 && self.flow_loop_stack.is_empty()
+                && self.resolving_object_type_stack.is_empty()
                 && self.current_node.is_none()
                 && self.deferred_diagnostic_callbacks.is_empty(),
             "shared graph: the seed checker is not at a file boundary: resolutions {} instantiations {} variances {} calls {} flow loops {} node {} deferred {}",

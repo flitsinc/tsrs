@@ -2142,10 +2142,10 @@ impl Checker {
         let mut props_out = props_out;
         let lazy_properties =
             if self.lazy_unmatched { self.get_lazy_properties_in_order(target) } else { None };
-        let lazy = lazy_properties.is_some();
+        let lazy = lazy_properties.is_some() || self.get_lazy_state_of_type(target).is_some();
         let properties: std::borrow::Cow<'static, [P<Symbol>]> = match lazy_properties {
             Some(properties) => properties.into(),
-            None => self.get_properties_of_type(target).into(),
+            None => self.get_layout_properties_of_type(target).into(),
         };
         // Only full lookups are worth recording (has_property_of_type does not instantiate).
         let mut found = found.filter(|_| !lazy && !self.lazy_has_prop);
@@ -2729,7 +2729,10 @@ impl Checker {
         {
             return None;
         }
-        match t.as_structured_type().members().and_then(|m| m.lookup_hashed(key)) {
+        if t.as_structured_type().get_lazy_state().is_some() {
+            return None;
+        }
+        match t.as_structured_type().raw_members().and_then(|m| m.lookup_hashed(key)) {
             Some(prop) if prop.flags().intersects(SymbolFlags::Value) => {
                 self.cached_type_of_value_symbol(prop).map(Some)
             }
