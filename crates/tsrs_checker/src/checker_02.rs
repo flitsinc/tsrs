@@ -3323,6 +3323,13 @@ impl Checker {
                 &[],
             );
         }
+        if !Self::container_allows_block_scoped_variable(node.parent().unwrap()) {
+            self.grammar_error_on_node(
+                node,
+                &diagnostics::X_0_DECLARATIONS_CAN_ONLY_BE_DECLARED_INSIDE_A_BLOCK,
+                &[&"class"],
+            );
+        }
         self.check_class_like_declaration(node);
         self.check_source_elements(node.members());
         self.check_constructor_declared_properties(node);
