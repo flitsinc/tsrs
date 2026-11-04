@@ -16,9 +16,9 @@ publish = false
 # as TypeScript's version (TSRS_TS_VERSION, crates/tsrs_core/src/version.rs), as the package's own build does, so the
 # tsbuildinfo `version`, `typesVersions` matching and `--version` agree with that tsgo; the release checks both.
 [workspace.metadata.typescript]
-version = "7.1.0-beta"
-commit = "3e9236361fa97a9e6c685f4833ac457ae2d8c50a"
-nightly = "7.1.0-beta"
+version = "7.1.0-dev.20261104.1"
+commit = "e2bc2bcb838e60fd44c02f0b224b8201a4d7ff5b"
+nightly = "7.1.0-dev.20261104.1"
 
 [workspace.dependencies]
 criterion2 = { version = "3.0.5", default-features = false } # Benchmarking
