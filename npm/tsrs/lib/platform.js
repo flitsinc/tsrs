@@ -1,8 +1,5 @@
-import childProcess from "node:child_process";
-import fs from "node:fs";
-
 // The NAPI-RS loader used by Oxc probes ldd, then Node's report, then a child process. Unknown hosts default to GNU.
-function isMusl() {
+function isMusl({ fs, childProcess }) {
     try {
         return fs.readFileSync("/usr/bin/ldd", "utf8").includes("musl");
     }
@@ -35,7 +32,10 @@ function isMusl() {
     }
 }
 
-export function getPlatformPackageName(os = process.platform, cpu = process.arch) {
-    const suffix = os === "linux" ? (isMusl() ? "-musl" : "-gnu") : "";
+export function getPlatformPackageName(os = process.platform, cpu = process.arch, modules) {
+    const suffix = os === "linux" ? (isMusl(modules ?? {
+        fs: process.getBuiltinModule("node:fs"),
+        childProcess: process.getBuiltinModule("node:child_process"),
+    }) ? "-musl" : "-gnu") : "";
     return `@tsrs/${os}-${cpu}${suffix}`;
 }

@@ -1,11 +1,7 @@
-import fs from "node:fs";
-import module from "node:module";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { getPlatformPackageName } from "./platform.js";
 
 // The native binary ships in a per-platform optional dependency, with GNU/musl suffixes on Linux as in Oxc.
-export default function getExePath() {
+export default function getExePath({ fs, module, path, url }) {
     const override = process.env.TSRS_BINARY;
     if (override) {
         if (!fs.existsSync(override)) {
@@ -14,10 +10,13 @@ export default function getExePath() {
         return override;
     }
 
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
     const platformPackagePrefix = "@tsrs/";
-    const platformPackageName = getPlatformPackageName();
+    const platformPackageName = getPlatformPackageName(process.platform, process.arch, {
+        fs,
+        childProcess: module.createRequire(import.meta.url)("node:child_process"),
+    });
     const exeName = process.platform === "win32" ? "tsrs.exe" : "tsrs";
 
     let packageDir;

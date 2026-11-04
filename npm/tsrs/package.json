@@ -59,6 +59,10 @@
             "@typescript/source": "./src/api/fs.ts",
             "default": "./dist/api/fs.js"
         },
+        "./wasm": {
+            "@typescript/source": "./src/wasm/index.ts",
+            "default": "./dist/wasm/index.js"
+        },
         "./path": {
             "@typescript/source": "./src/api/typedPaths.ts",
             "default": "./dist/api/typedPaths.js"

@@ -15,6 +15,8 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
+import module from "node:module";
+import url from "node:url";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -51,7 +53,7 @@ try {
 
     const { default: getExePath } = await import(pathToFileURL(path.join(dir, "node_modules/tsrs/lib/getExePath.js")));
     const { getPlatformPackageName } = await import(pathToFileURL(path.join(dir, "node_modules/tsrs/lib/platform.js")));
-    const exe = getExePath();
+    const exe = getExePath({ fs, module, path, url });
     if (args.includes("--noembed")) {
         const binary = fs.readFileSync(exe);
         for (const name of ["lib.es5.d.ts", "lib.dom.d.ts"]) {
@@ -66,7 +68,7 @@ try {
     console.log(cliVersion);
 
     // CLI/API keep using tsrs; Windows also ships the executable name VS Code discovers.
-    const nativeExe = path.join(dir, "node_modules", getPlatformPackageName(), process.platform === "win32" ? "tsrs.exe" : "tsrs");
+    const nativeExe = path.join(dir, "node_modules", getPlatformPackageName(process.platform, process.arch, { fs, childProcess: { execFileSync } }), process.platform === "win32" ? "tsrs.exe" : "tsrs");
     if (fs.realpathSync(nativeExe) !== fs.realpathSync(exe)) throw new Error("CLI/API must resolve the tsrs executable");
     const sdk = process.platform === "win32" ? path.join(path.dirname(nativeExe), "tsgo.exe") : path.join(dir, "node_modules/tsrs/tsdk/tsgo");
     if (process.platform === "win32" && !fs.readFileSync(sdk).equals(fs.readFileSync(nativeExe))) {

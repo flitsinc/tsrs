@@ -1,4 +1,8 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import module from "node:module";
+import path from "node:path";
+import url from "node:url";
 import getExePath from "./getExePath.js";
 
 // Node makes piped stdio non-blocking. Restore blocking mode before Rust uses it.
@@ -8,7 +12,7 @@ if (!process.stderr.isTTY) process.stderr._handle?.setBlocking?.(true);
 
 let exe;
 try {
-    exe = getExePath();
+    exe = getExePath({ fs, module, path, url });
 }
 catch (e) {
     console.error(`tsrs: ${e.message}`);

@@ -38,6 +38,7 @@ const PATCHES = {
 // except ast.bench.ts, which ast.test.ts imports.
 const TEST_FILES = [
     "test/testUtils.ts",
+    "test/wasm.ts",
     "test/timingDump.test.ts",
     "test/diagnosticFormatter.test.ts",
     "test/encoder.test.ts",
@@ -53,9 +54,12 @@ const TEST_FILES = [
     "test/sync/ast.bench.ts",
     "test/sync/astnav.test.ts",
     "test/sync/shutdown.test.ts",
+    "test/sync/transport.test.ts",
+    "test/sync/wasm.test.ts",
     "test/async/api.testUtils.ts",
     "test/async/api.test.ts",
     "test/async/astnav.test.ts",
+    "test/async/transport.test.ts",
 ];
 
 function parseArgs(argv) {

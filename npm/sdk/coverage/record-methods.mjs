@@ -8,7 +8,10 @@ const log = process.env.TSRS_METHOD_LOG;
 if (log) {
     const src = new URL("../../tsrs/src/api/", import.meta.url);
     const { SyncRpcChannel } = await import(new URL("syncChannel.ts", src).href);
-    const { Client: AsyncClient } = await import(new URL("async/client.ts", src).href);
+    const { createClient } = await import(new URL("async/client.ts", src).href);
+    // #64174 hides RpcClient behind createClient. Construction does not connect or own a subprocess;
+    // obtain only its native prototype so injected test transports are never counted as server coverage.
+    const asyncPrototype = Object.getPrototypeOf(createClient({ tsserverPath: process.env.TSRS_BINARY }));
 
     const write = (variant, method, outcome) => fs.appendFileSync(log, `${variant}\t${method}\t${outcome}\n`);
     const inner = (variant, params, outcome) => {
@@ -41,8 +44,8 @@ if (log) {
         };
     }
 
-    const originalSend = AsyncClient.prototype.sendRequestWithTiming;
-    AsyncClient.prototype.sendRequestWithTiming = async function (requestType, params) {
+    const originalSend = asyncPrototype.sendRequestWithTiming;
+    asyncPrototype.sendRequestWithTiming = async function (requestType, params) {
         try {
             const result = await originalSend.call(this, requestType, params);
             write("async", requestType.method, "ok");
