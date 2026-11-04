@@ -199,8 +199,9 @@ impl Printer {
         let n = node.as_new_expression();
         self.emit_token(Kind::NewKeyword, node.pos(), WriteKind::Keyword, node);
         self.write_space();
-        if skip_partially_emitted_expressions(n.expression()).kind() == Kind::CallExpression {
-            // Parenthesize `C()` inside of a NewExpression so it is treated as `new (C())` and not `new C()`
+        if has_unparenthesized_call_at_start_of_member_chain(n.expression()) {
+            // Parenthesize `C()` or `C().D` inside of a NewExpression so it is treated as `new (C())` or `new (C().D)`
+            // and not `new C()` or `new C().D`
             self.emit_expression(n.expression(), OperatorPrecedence::Parentheses);
         } else {
             self.emit_expression(n.expression(), OperatorPrecedence::Member);

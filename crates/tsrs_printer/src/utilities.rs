@@ -5,6 +5,28 @@ use tsrs_scanner as scanner;
 
 use crate::*;
 
+// Determines whether the expression of a NewExpression would be emitted with an unparenthesized CallExpression at the
+// start of its member chain, such as `C()` in `C().D`. Such an expression must be parenthesized when used as the
+// expression of a NewExpression, since `new C().D()` would be parsed as `(new C()).D()` rather than `new (C().D)()`.
+pub(crate) fn has_unparenthesized_call_at_start_of_member_chain(mut node: P<Node>) -> bool {
+    loop {
+        node = skip_partially_emitted_expressions(node);
+        if get_expression_precedence(node) < OperatorPrecedence::Member {
+            // Each expression in the member chain is emitted with member precedence, so this expression will already
+            // be parenthesized, which ends the member chain.
+            return false;
+        }
+        match node.kind() {
+            Kind::CallExpression => return true,
+            Kind::PropertyAccessExpression
+            | Kind::ElementAccessExpression
+            | Kind::ExpressionWithTypeArguments => node = node.expression().unwrap(),
+            Kind::TaggedTemplateExpression => node = node.as_tagged_template_expression().tag,
+            _ => return false,
+        }
+    }
+}
+
 bitflags::bitflags! {
     #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Default)]
     #[expect(non_camel_case_types, reason = "Keep the upstream bitflags type name.")]
