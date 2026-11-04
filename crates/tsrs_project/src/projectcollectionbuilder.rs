@@ -396,6 +396,19 @@ impl ProjectCollectionBuilder {
             }
         }
 
+        // Projects that are still the default for API-opened files must be retained.
+        #[expect(
+            clippy::iter_over_hash_type,
+            reason = "each lookup removes only its own project key; Go ranges the map too"
+        )]
+        for (path, file) in &self.api_state.borrow().open_files {
+            if let Some(entry) = self.find_default_configured_project(&file.file_name, path)
+                && let Some(projects_to_close) = &mut projects_to_close
+            {
+                projects_to_close.remove(&entry.value().unwrap().config_file_path);
+            }
+        }
+
         if let Some(projects_to_close) = &projects_to_close {
             #[expect(
                 clippy::iter_over_hash_type,
@@ -737,7 +750,7 @@ impl ProjectCollectionBuilder {
     // project is deleted, the inferred project roots are recomputed, and the config file
     // registry is cleaned up. This is the shared mechanism that keeps the set of loaded
     // projects minimal for both LSP file opens and API file opens/closes.
-    fn cleanup_configured_projects(&self, retain: Option<&Set<Path>>, logger: &LogTree) {
+    pub(crate) fn cleanup_configured_projects(&self, retain: Option<&Set<Path>>, logger: &LogTree) {
         let to_remove_projects: RefCell<Set<Path>> = RefCell::new(Set::default());
         self.configured_projects.range(|entry| {
             to_remove_projects.borrow_mut().add(entry.key().0);

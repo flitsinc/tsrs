@@ -497,6 +497,19 @@ impl Checker {
         self.get_index_infos_of_type(t)
     }
 
+    pub fn get_index_infos_of_index_symbol_exported(
+        &mut self,
+        symbol: P<Symbol>,
+    ) -> Vec<P<IndexInfo>> {
+        let mut siblings = symbol
+            .parent()
+            .and_then(|parent| self.get_members_of_symbol(parent))
+            .map(|members| members.values())
+            .unwrap_or_default();
+        self.sort_symbols(&mut siblings);
+        self.get_index_infos_of_index_symbol(symbol, &siblings)
+    }
+
     // exports.go:362
     pub fn is_context_sensitive_exported(&mut self, node: P<Node>) -> bool {
         self.is_context_sensitive(node)

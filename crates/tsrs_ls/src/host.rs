@@ -5,12 +5,21 @@ use crate::lsconv::Converters;
 use crate::lsutil::UserPreferences;
 use crate::sourcemap::ECMALineInfo;
 
+#[derive(Clone, Debug)]
+pub struct WorkspaceFolder {
+    pub path: String,
+    pub name: String,
+}
+
 // host.go:10
 pub trait Host: Send + Sync {
     fn use_case_sensitive_file_names(&self) -> bool;
     fn read_file(&self, path: &str) -> Option<String>;
     fn converters(&self) -> Arc<Converters>;
     fn get_preferences(&self, active_file: &str) -> UserPreferences;
+    fn get_workspace_folders(&self) -> &[WorkspaceFolder] {
+        &[]
+    }
     fn get_ecma_line_info(&self, file_name: &str) -> Option<Arc<ECMALineInfo>>;
     fn auto_import_registry(&self) -> Option<Arc<autoimport::Registry>>;
 

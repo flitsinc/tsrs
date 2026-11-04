@@ -3,6 +3,46 @@ use tsrs_lsproto as lsproto;
 
 use crate::projecttestutil::setup;
 
+#[test]
+fn watched_file_create_reloads_an_existing_cached_dependency() {
+    let files = [
+        (
+            "/src/tsconfig.json",
+            r#"{"compilerOptions":{"noLib":true,"module":"esnext","moduleResolution":"bundler"},"files":["main.ts"]}"#,
+        ),
+        ("/src/main.ts", "import { value } from './dep'; export const typed: 1 = value;"),
+        ("/src/dep.ts", "export const value = 1;"),
+    ];
+    let (session, utils) = setup(&files);
+    let ctx = Context::background();
+    let main = lsproto::DocumentUri("file:///src/main.ts".to_string());
+    let ls = session.get_language_service(&ctx, &main).unwrap();
+    let file = ls.get_program().get_source_file("/src/main.ts").unwrap();
+    assert_eq!(
+        ls.get_program().get_semantic_diagnostics(&ctx, Some(file)),
+        [] as [tsrs_core::P<tsrs_ast::Diagnostic>; 0]
+    );
+    utils.fs().write_file("/src/dep.ts", "export const value = 2;").unwrap();
+    session.did_change_watched_files(
+        &ctx,
+        &[lsproto::FileEvent {
+            uri: lsproto::DocumentUri("file:///src/dep.ts".to_string()),
+            type_: lsproto::FileChangeType::CREATED,
+        }],
+    );
+    let ls = session.get_language_service(&ctx, &main).unwrap();
+    let program = ls.get_program();
+    assert_eq!(program.get_source_file("/src/dep.ts").unwrap().text(), "export const value = 2;");
+    let file = program.get_source_file("/src/main.ts").unwrap();
+    assert!(
+        program
+            .get_semantic_diagnostics(&ctx, Some(file))
+            .iter()
+            .any(|diagnostic| diagnostic.code() == 2322)
+    );
+    session.close();
+}
+
 fn worker_arena_bytes() -> usize {
     tsrs_compiler::worker_pool().broadcast(|_| tsrs_core::ptr::arena_used_bytes()).into_iter().sum()
 }

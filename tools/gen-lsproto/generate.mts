@@ -377,7 +377,6 @@ const SURFACE = [
     ["","field","WorkspaceDiagnosticReport","items"],
     ["","field","WorkspaceDiagnosticReportPartialResult","items"],
     ["","field","WorkspaceEditMetadata","is_refactoring"],
-    ["","field","WorkspaceFolder","name"],
     ["","field","WorkspaceFoldersChangeEvent","added removed"],
     ["","field","WorkspaceFoldersInitializeParams","workspace_folders"],
     ["","field","WorkspaceFoldersServerCapabilities","change_notifications supported"],

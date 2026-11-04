@@ -1027,7 +1027,30 @@ impl QuickInfoWriter {
         }
         if flags.intersects(SymbolFlags::Variable | SymbolFlags::Property | SymbolFlags::Accessor) {
             self.write_new_line();
-            if !symbol.check_flags().intersects(CheckFlags::IndexSymbol) {
+            if symbol.check_flags().intersects(CheckFlags::IndexSymbol) {
+                self.dpw.write_punctuation("(");
+                self.dpw.write("index");
+                self.dpw.write_punctuation(") ");
+                if let Some(parent) = symbol.parent() {
+                    self.write_symbol_classified(
+                        c,
+                        parent,
+                        None,
+                        SymbolFlags::None,
+                        SYMBOL_FORMAT_FLAGS,
+                    );
+                }
+                self.dpw.write_punctuation("[");
+                for (index, info) in
+                    c.get_index_infos_of_index_symbol_exported(symbol).iter().enumerate()
+                {
+                    if index != 0 {
+                        self.dpw.write_punctuation(" | ");
+                    }
+                    self.write_type_classified(c, info.key_type(), container, TYPE_FORMAT_FLAGS);
+                }
+                self.dpw.write_punctuation("]: ");
+            } else {
                 if flags.intersects(SymbolFlags::Property) {
                     self.dpw.write_punctuation("(");
                     self.dpw.write("property");

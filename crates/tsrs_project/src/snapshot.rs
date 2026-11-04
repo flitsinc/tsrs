@@ -356,6 +356,8 @@ impl Snapshot {
         let previous_open_files = overlay_file_handles(previous_overlays);
         let open_files = overlay_file_handles(overlays);
         if file_changes.has_excessive_watch_events() {
+            file_changes = fs.expand_created_cache_entries(file_changes);
+            file_changes = self.fs.expand_realpath_aliases(file_changes);
             let invalidate_start = Instant::now();
             if file_changes.invalidate_all {
                 fs.invalidate_cache();
@@ -402,6 +404,7 @@ impl Snapshot {
                 &previous_open_files,
                 &open_files,
             );
+            file_changes = fs.expand_created_cache_entries(file_changes);
             file_changes = self.fs.expand_realpath_aliases(file_changes);
             file_changes = fs.mark_dirty_files(file_changes);
             file_changes = fs.convert_open_and_close_to_changes(
@@ -748,6 +751,13 @@ impl Snapshot {
                     .err();
             }
 
+            if change.reason == UpdateReason::IdleCleanDiskCache {
+                project_collection_builder.cleanup_configured_projects(
+                    Some(&Set::default()),
+                    &logger.fork("cleanupConfiguredProjects"),
+                );
+            }
+
             for uri in &change.resource_request.documents {
                 project_collection_builder.did_request_file(
                     uri,
@@ -1081,6 +1091,10 @@ fn overlay_file_handles(overlays: &OverlayMap) -> FxHashMap<Path, Arc<dyn FileHa
 
 // ls.Host
 impl tsrs_ls::Host for Snapshot {
+    fn get_workspace_folders(&self) -> &[tsrs_ls::WorkspaceFolder] {
+        &self.host.options.initial_workspace_folders
+    }
+
     // snapshot.go:270
     fn use_case_sensitive_file_names(&self) -> bool {
         self.fs.fs.use_case_sensitive_file_names()

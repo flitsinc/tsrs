@@ -23,7 +23,9 @@ use tsrs_module::{
 use tsrs_spanmap::MappingErrorKind;
 use tsrs_tsoptions as tsoptions;
 
-use crate::file_include::{AutomaticTypeDirectiveFileData, FileIncludeKind, FileIncludeReason};
+use crate::file_include::{
+    AutomaticTypeDirectiveFileData, FileIncludeKind, FileIncludeReason, SyntheticImportKind,
+};
 use crate::filesparser::{FilesParser, ParseTask, ResolvedRef, TaskId};
 use crate::host::CompilerHost;
 use crate::includeprocessor::FileIncludeData;
@@ -160,6 +162,18 @@ pub struct ProcessedFiles {
 pub struct JsxRuntimeImportSpecifier {
     pub(crate) module_reference: String,
     pub(crate) specifier: P<Node>,
+}
+
+pub(crate) fn new_synthetic_import(
+    factory: &NodeFactory,
+    text: &str,
+    file: P<SourceFile>,
+) -> P<Node> {
+    let module_reference = factory.new_string_literal(tsrs_core::alloc_str(text), TokenFlags::None);
+    let import_decl = factory.new_import_declaration(None, None, module_reference, None);
+    module_reference.set_parent(Some(import_decl));
+    import_decl.set_parent(Some(file.as_node()));
+    module_reference
 }
 
 // fileloader.go:337 (Go runs it on the loader before creating the resolver; it only needs the options and the host,
@@ -1697,7 +1711,15 @@ impl FileLoader {
                             FileIncludeKind::Import,
                             self.tasks[t].reason_path(),
                             import_index,
-                            if import_index.is_none() { Some(entry) } else { None },
+                            import_index.is_none().then(|| {
+                                if self.tasks[t].data().import_helpers_import_specifier
+                                    == Some(entry)
+                                {
+                                    SyntheticImportKind::Helpers
+                                } else {
+                                    SyntheticImportKind::JSXRuntime
+                                }
+                            }),
                         );
                         self.add_sub_task_normalized(
                             t,
@@ -1726,17 +1748,7 @@ impl FileLoader {
     }
 
     fn create_synthetic_import(&self, text: &str, file: P<SourceFile>) -> P<Node> {
-        let external_helpers_module_reference =
-            self.factory.new_string_literal(tsrs_core::alloc_str(text), TokenFlags::None);
-        let import_decl = self.factory.new_import_declaration(
-            None,
-            None,
-            external_helpers_module_reference,
-            None,
-        );
-        external_helpers_module_reference.set_parent(Some(import_decl));
-        import_decl.set_parent(Some(file.as_node()));
-        external_helpers_module_reference
+        new_synthetic_import(&self.factory, text, file)
     }
 
     pub(crate) fn path_for_lib_file(&mut self, name: &str) -> P<LibFile> {

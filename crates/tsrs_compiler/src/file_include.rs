@@ -53,7 +53,7 @@ impl FileIncludeReason {
         kind: FileIncludeKind,
         file: &'static str,
         index: Option<usize>,
-        synthetic: Option<P<Node>>,
+        synthetic: Option<SyntheticImportKind>,
     ) -> P<FileIncludeReason> {
         let mut r = FileIncludeReason::new(kind);
         r.referenced_file = Some(ReferencedFileData { file, index, synthetic });
@@ -61,11 +61,17 @@ impl FileIncludeReason {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SyntheticImportKind {
+    Helpers,
+    JSXRuntime,
+}
+
 pub struct ReferencedFileData {
     // Go `tspath.Path`; shared by every reference from the same file (fileLoader `reason_path`).
     pub(crate) file: &'static str,
     index: Option<usize>,
-    synthetic: Option<P<Node>>,
+    synthetic: Option<SyntheticImportKind>,
 }
 
 pub struct ReferenceFileLocation {
@@ -161,11 +167,17 @@ pub fn get_referenced_location(
     match r.kind {
         FileIncludeKind::Import => {
             let mut specifier: Option<P<Node>> = None;
-            let mut is_synthetic = false;
+            let is_synthetic = ref_.synthetic.is_some();
             let imports = file.imports();
             if let Some(synthetic) = ref_.synthetic {
-                specifier = Some(synthetic);
-                is_synthetic = true;
+                specifier = match synthetic {
+                    SyntheticImportKind::Helpers => {
+                        program.get_import_helpers_import_specifier(&tspath::Path::from(ref_.file))
+                    }
+                    SyntheticImportKind::JSXRuntime => {
+                        program.get_jsx_runtime_import_specifier(&tspath::Path::from(ref_.file)).1
+                    }
+                };
             } else if ref_.index.is_some_and(|index| index < imports.len()) {
                 specifier = Some(imports[ref_.index.unwrap()]);
             } else {
@@ -367,11 +379,7 @@ fn compute_reference_file_diagnostic(
                         &[&reference_text, &file_name, &package_id.to_string()],
                     )
                 }
-            } else if program
-                .import_helpers_import_specifiers
-                .get(reference_location.file.path())
-                .is_some_and(|s| Some(*s) == reference_location.node)
-            {
+            } else if r.as_referenced_file_data().synthetic == Some(SyntheticImportKind::Helpers) {
                 if package_id.name.is_empty() {
                     new_compiler_diagnostic(
                         &diagnostics::IMPORTED_VIA_0_FROM_FILE_1_TO_IMPORT_IMPORT_HELPERS_AS_SPECIFIED_IN_COMPILER_OPTIONS,

@@ -80,11 +80,6 @@ pub struct ProgramOptions {
     /// tsrs-only: what the file loader allocates goes to these regions (programregions.rs), which the caller frees
     /// once nothing uses the program's processed-file and resolution data (watch mode, `tsc -b`).
     pub regions: Option<std::sync::Arc<crate::programregions::ProgramRegions>>,
-    /// tsrs-only: `reuse_program` may keep the file loader's synthetic imports (JSX runtime, import helpers) of the
-    /// edited file. Their parent is this program's version of the file, so the caller must keep it alive while any
-    /// program reused from this one lives (watch mode keeps the full build's files). The language server frees it
-    /// with this program, so it leaves this off and gets Go's full rebuild.
-    pub reuse_synthetic_imports: bool,
 }
 
 impl ProgramOptions {
@@ -105,7 +100,6 @@ impl ProgramOptions {
             checker_regions: false,
             checker_diagnostic_regions: false,
             regions: None,
-            reuse_synthetic_imports: false,
         }
     }
 
@@ -133,7 +127,6 @@ impl ProgramOptions {
             checker_diagnostic_regions: false,
             // A fallback full build owns new loader data; only successful clones share the old build's regions.
             regions: config.regions.map(|_| std::sync::Arc::default()),
-            reuse_synthetic_imports: false,
         }
     }
 
@@ -209,6 +202,12 @@ pub struct Program {
     // the rest is shared by the programs ReuseProgram derives from this one, as Go's shallow struct copy shares it.
     pub(crate) files: &'static [P<SourceFile>],
     pub(crate) files_by_path: FxHashMap<Path, P<SourceFile>>,
+    pub(crate) import_helpers_import_specifiers: Arc<FxHashMap<Path, P<Node>>>,
+    pub(crate) jsx_runtime_import_specifiers:
+        Arc<FxHashMap<Path, P<crate::fileloader::JsxRuntimeImportSpecifier>>>,
+    // Reused programs can retain synthetic imports from earlier edits of other files.
+    // A region per replaced file follows those imports across every shallow map clone.
+    synthetic_import_regions: Arc<FxHashMap<Path, tsrs_core::arena::Region>>,
     processed: &'static ProcessedFiles,
     project_reference_file_mapper: &'static ProjectReferenceFileMapper,
     processing_diagnostics: Mutex<Vec<ProcessingDiagnostic>>,
@@ -256,8 +255,6 @@ pub struct Program {
     pub(crate) checker_regions: bool,
     // tsrs-only: `ProgramOptions::checker_diagnostic_regions`.
     pub(crate) checker_diagnostic_regions: bool,
-    // tsrs-only: `ProgramOptions::reuse_synthetic_imports`.
-    reuse_synthetic_imports: bool,
     // tsrs-only: the address of the program `reuse_program` made this one from, 0 for a program built in full
     // (`is_reuse_of`). An address, not a reference: the watch frees that program once this one has replaced it.
     reused_from: usize,
@@ -543,6 +540,13 @@ pub fn new_program(opts: ProgramOptions) -> &'static Program {
         module_resolution_error,
         files,
         files_by_path,
+        import_helpers_import_specifiers: Arc::new(std::mem::take(
+            &mut processed.import_helpers_import_specifiers,
+        )),
+        jsx_runtime_import_specifiers: Arc::new(std::mem::take(
+            &mut processed.jsx_runtime_import_specifiers,
+        )),
+        synthetic_import_regions: Arc::default(),
         processed: Box::leak(Box::new(processed)),
         project_reference_file_mapper,
         processing_diagnostics: Mutex::new(processing_diagnostics),
@@ -567,7 +571,6 @@ pub fn new_program(opts: ProgramOptions) -> &'static Program {
         canonical_diagnostics: opts.canonical_diagnostics,
         checker_regions: opts.checker_regions,
         checker_diagnostic_regions: opts.checker_diagnostic_regions,
-        reuse_synthetic_imports: opts.reuse_synthetic_imports,
         reused_from: 0,
         own_region: None,
     };
@@ -809,6 +812,9 @@ impl Program {
             compare_paths_options: self.compare_paths_options.clone(),
             files: self.files,
             files_by_path: FxHashMap::default(),
+            import_helpers_import_specifiers: Arc::clone(&self.import_helpers_import_specifiers),
+            jsx_runtime_import_specifiers: Arc::clone(&self.jsx_runtime_import_specifiers),
+            synthetic_import_regions: Arc::clone(&self.synthetic_import_regions),
             processed: self.processed,
             project_reference_file_mapper: self.project_reference_file_mapper,
             processing_diagnostics: Mutex::new(self.processing_diagnostics().clone()),
@@ -834,7 +840,6 @@ impl Program {
             canonical_diagnostics: self.canonical_diagnostics,
             checker_regions: self.checker_regions,
             checker_diagnostic_regions: self.checker_diagnostic_regions,
-            reuse_synthetic_imports: self.reuse_synthetic_imports,
             reused_from: std::ptr::from_ref(self) as usize,
             own_region,
         };
@@ -859,6 +864,11 @@ impl Program {
             let _scope = result.own_region.as_ref().map(tsrs_core::arena::Region::enter);
             tsrs_core::alloc_vec(files)
         };
+        {
+            let region = result.own_region.clone();
+            let _scope = region.as_ref().map(tsrs_core::arena::Region::enter);
+            result.replace_synthetic_imports(new_file_some, &new_supplemental_files);
+        }
         let result: &'static Program = Box::leak(Box::new(result));
         result.init_checker_pool(create_checker_pool, self.compiler_checker_pool());
         (Some(result), new_file, true)
@@ -922,6 +932,7 @@ impl Program {
             return false;
         };
         file1.parse_options() == file2.parse_options()
+            && file1.virtual_file_name() == file2.virtual_file_name()
             && file1.script_kind.get() == file2.script_kind.get()
             && ast::is_external_or_common_js_module(file1)
                 == ast::is_external_or_common_js_module(file2)
@@ -956,15 +967,7 @@ impl Program {
             )
     }
 
-    // Whether the program `reuse_program` makes may keep the synthetic imports the file loader made for `old_file`,
-    // the version of it in this program (the import helpers module and the JSX runtime module), with their module
-    // resolution (the clone keeps the file's), as it keeps the file's other imports. Go builds the program again
-    // whenever either version has one (program.go:389), so every edit of a file with JSX (`react-jsx`) or under
-    // `importHelpers` is a full build. tsrs-only, with `reuse_synthetic_imports`: they are kept when `new_file` needs
-    // the same ones. The synthetic nodes' parent stays the old version of the file, which only lends them its path,
-    // options and implied format, the same as the new version's (`can_replace_file_in_program` compares the parse
-    // options). The JSX runtime comes from the options and the file's pragmas; whether the file needs the helpers
-    // module, from the options and whether it is a module, which `can_replace_file_in_program` also compares.
+    // Synthetic imports resolve identically across an edit when their helper and JSX runtime names agree.
     fn can_keep_synthetic_imports(&self, old_file: P<SourceFile>, new_file: P<SourceFile>) -> bool {
         let old_helpers = self.import_helpers_import_specifiers.contains_key(old_file.path());
         let new_helpers = self.needs_import_helpers_import_specifier(new_file);
@@ -973,13 +976,44 @@ impl Program {
             .get(old_file.path())
             .map_or("", |jsx| jsx.module_reference.as_str());
         let new_jsx_runtime = self.jsx_runtime_import_specifier(new_file);
-        if !self.reuse_synthetic_imports {
-            return !old_helpers
-                && !new_helpers
-                && old_jsx_runtime.is_empty()
-                && new_jsx_runtime.is_empty();
-        }
         old_helpers == new_helpers && old_jsx_runtime == new_jsx_runtime
+    }
+
+    fn replace_synthetic_imports(
+        &mut self,
+        new_file: P<SourceFile>,
+        supplemental_files: &[P<SourceFile>],
+    ) {
+        let factory = ast::NodeFactory::default();
+        for &file in std::iter::once(&new_file).chain(supplemental_files) {
+            if !self.import_helpers_import_specifiers.contains_key(file.path())
+                && !self.jsx_runtime_import_specifiers.contains_key(file.path())
+            {
+                continue;
+            }
+            let region = tsrs_core::arena::Region::new(4 << 10);
+            let scope = region.enter();
+            if self.import_helpers_import_specifiers.contains_key(file.path()) {
+                let specifier = crate::fileloader::new_synthetic_import(&factory, "tslib", file);
+                Arc::make_mut(&mut self.import_helpers_import_specifiers)
+                    .insert(file.path().clone(), specifier);
+            }
+            if let Some(jsx) = self.jsx_runtime_import_specifiers.get(file.path()) {
+                let module_reference = jsx.module_reference.clone();
+                let specifier =
+                    crate::fileloader::new_synthetic_import(&factory, &module_reference, file);
+                Arc::make_mut(&mut self.jsx_runtime_import_specifiers).insert(
+                    file.path().clone(),
+                    P::new(crate::fileloader::JsxRuntimeImportSpecifier {
+                        module_reference,
+                        specifier,
+                    }),
+                );
+            }
+            drop(scope);
+            region.trim();
+            Arc::make_mut(&mut self.synthetic_import_regions).insert(file.path().clone(), region);
+        }
     }
 
     // program.go:480

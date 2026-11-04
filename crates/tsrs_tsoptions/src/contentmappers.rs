@@ -244,6 +244,21 @@ pub fn resolve_content_mapper_manifest(
             )),
         );
     };
+    let logical_package_directory = if resolved.original_path.is_empty() {
+        &resolved.resolved_file_name
+    } else {
+        &resolved.original_path
+    };
+    if !host.is_content_mapper_package_allowed(logical_package_directory) {
+        return (
+            Manifest::default(),
+            String::new(),
+            Some(new_compiler_diagnostic(
+                &diagnostics::THE_CONTENT_MAPPER_PACKAGE_0_IS_OUTSIDE_THE_OPEN_WORKSPACE_AND_WILL_NOT_BE_LOADED,
+                &[&package_name],
+            )),
+        );
+    }
     let package_directory = resolved.resolved_file_name.to_string();
 
     let package_json_path = tspath::combine_paths(&package_directory, &["package.json"]);

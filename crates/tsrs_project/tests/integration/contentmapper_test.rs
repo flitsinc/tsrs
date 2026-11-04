@@ -152,6 +152,89 @@ fn extension_contribution(package_directory: &str) -> ContentMapperContributions
     }
 }
 
+#[test]
+fn relative_content_mapper_cannot_escape_workspace_through_node_modules() {
+    let manifest = contentmappertest::package_json(contentmappertest::TRANSFORMING_MAPPER);
+    let files = [
+        (
+            "/home/trusted/tsconfig.json",
+            r#"{"compilerOptions":{"noLib":true},"files":["main.ts"],"contentMappers":[{"package":"./node_modules/../../outside","extensions":[".box"]}]}"#,
+        ),
+        ("/home/trusted/main.ts", "export {};"),
+        ("/home/trusted/node_modules/keep/package.json", "{}"),
+        ("/home/outside/package.json", manifest.as_str()),
+    ];
+    let spawner = recording_spawner();
+    let (session, _) = new_mapper_session(
+        &files,
+        SessionOptions {
+            initial_workspace_roots: Some(vec!["/home/trusted".to_string()]),
+            ..session_options("/home/trusted", true)
+        },
+        Arc::clone(&spawner) as Arc<dyn Spawner>,
+    );
+    let main = uri("file:///home/trusted/main.ts");
+    session.did_open_file(
+        &ctx(),
+        main,
+        1,
+        "export {};".to_string(),
+        lsproto::LanguageKind::TYPE_SCRIPT,
+    );
+    let snapshot = session.snapshot();
+    let project = snapshot
+        .project_collection
+        .configured_project(&Path::from("/home/trusted/tsconfig.json"))
+        .unwrap();
+    assert_eq!(project.command_line.unwrap().content_mappers(), []);
+    assert_eq!(spawner.spawns.load(Ordering::SeqCst), 0);
+    session.close();
+}
+
+#[test]
+fn inherited_relative_mapper_resolves_from_its_declaring_config() {
+    let manifest = contentmappertest::package_json(contentmappertest::TRANSFORMING_MAPPER);
+    let files = [
+        (
+            "/home/trusted/tsconfig.json",
+            r#"{"extends":"./config/middle.json","files":["main.ts"]}"#,
+        ),
+        ("/home/trusted/config/middle.json", r#"{"extends":"./base.json"}"#),
+        (
+            "/home/trusted/config/base.json",
+            r#"{"compilerOptions":{"noLib":true},"contentMappers":[{"package":"./mapper","extensions":[".box"]}]}"#,
+        ),
+        ("/home/trusted/config/mapper/package.json", manifest.as_str()),
+        ("/home/trusted/main.ts", "export {};"),
+    ];
+    let spawner = recording_spawner();
+    let (session, _) = new_mapper_session(
+        &files,
+        SessionOptions {
+            initial_workspace_roots: Some(vec!["/home/trusted".to_string()]),
+            ..session_options("/home/trusted", true)
+        },
+        Arc::clone(&spawner) as Arc<dyn Spawner>,
+    );
+    let main = uri("file:///home/trusted/main.ts");
+    session.did_open_file(
+        &ctx(),
+        main,
+        1,
+        "export {};".to_string(),
+        lsproto::LanguageKind::TYPE_SCRIPT,
+    );
+    let snapshot = session.snapshot();
+    let project = snapshot
+        .project_collection
+        .configured_project(&Path::from("/home/trusted/tsconfig.json"))
+        .unwrap();
+    let mappers = project.command_line.unwrap().get().content_mappers();
+    assert_eq!(mappers.len(), 1);
+    assert_eq!(mappers[0].package_directory, "/home/trusted/config/mapper");
+    session.close();
+}
+
 // contentmapper_test.go:53
 #[test]
 fn content_mapper_project_without_mapped_files() {

@@ -3584,7 +3584,7 @@ pub(crate) fn get_start_element_count(t: &'static TupleType, flags: ElementFlags
 
 // Return count of ending consecutive tuple elements of the given kind(s)
 // checker.go:23916
-pub(crate) fn get_end_element_count(t: &'static TupleType, flags: ElementFlags) -> usize {
+pub fn get_end_element_count(t: &'static TupleType, flags: ElementFlags) -> usize {
     let element_infos = t.element_infos();
 
     element_infos.iter().rev().take_while(|info| info.flags.intersects(flags)).count()

@@ -630,6 +630,7 @@ struct FileEvents {
     saved: bool,
     created: bool,
     deleted: bool,
+    watch_observed: bool,
 }
 
 impl OverlayFS {
@@ -653,6 +654,7 @@ impl OverlayFS {
                 file_event_map.entry(uri.clone()).or_default()
             };
 
+            events.watch_observed |= change.kind.is_watch_kind();
             if !result.includes_watch_change_outside_node_modules
                 && change.kind.is_watch_kind()
                 && !uri.0.contains("/node_modules/")
@@ -761,27 +763,8 @@ impl OverlayFS {
                 o = None;
             }
 
-            if events.watch_changed {
-                match &o {
-                    None => result.changed.add(uri.clone()),
-                    Some(existing) if !events.saved => {
-                        let (matches_disk_text, _) =
-                            existing.compute_matches_disk_text(self.host.fs());
-                        if matches_disk_text != existing.matches_disk_text() {
-                            let mut updated = new_overlay(
-                                existing.base.file_name.clone(),
-                                existing.content().to_string(),
-                                existing.version(),
-                                existing.kind,
-                            );
-                            updated.matches_disk_text = matches_disk_text;
-                            let updated = Arc::new(updated);
-                            new_overlays.insert(path.clone(), Arc::clone(&updated));
-                            o = Some(updated);
-                        }
-                    }
-                    Some(_) => {}
-                }
+            if events.watch_changed && o.is_none() {
+                result.changed.add(uri.clone());
             }
 
             if !events.changes.is_empty() && o.is_some() {
@@ -842,22 +825,25 @@ impl OverlayFS {
                 }
             }
 
-            if events.saved {
-                if let Some(existing) = &o {
+            if let Some(existing) = &o
+                && (events.watch_observed || events.saved)
+            {
+                let (matches_disk_text, _) = existing.compute_matches_disk_text(self.host.fs());
+                if matches_disk_text != existing.matches_disk_text() {
                     let mut updated = new_overlay(
                         existing.base.file_name.clone(),
                         existing.content().to_string(),
                         existing.version(),
                         existing.kind,
                     );
-                    updated.matches_disk_text = true;
+                    updated.matches_disk_text = matches_disk_text;
                     let updated = Arc::new(updated);
                     new_overlays.insert(path.clone(), Arc::clone(&updated));
                     o = Some(updated);
-                } else if !events.watch_changed {
-                    // File was saved but never opened via didOpen; treat as a disk change.
-                    result.changed.add(uri.clone());
                 }
+            } else if events.saved && o.is_none() && !events.watch_changed {
+                // File was saved but never opened via didOpen; treat as a disk change.
+                result.changed.add(uri.clone());
             }
 
             if events.created && o.is_none() {

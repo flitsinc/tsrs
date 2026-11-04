@@ -42,7 +42,9 @@ main(async () => {
                 JSON.stringify(value)
                     .replaceAll(base, "file:///")
                     .replaceAll(root + "/", "/")
-                    .replaceAll(root.toLowerCase() + "/", "/"),
+                    .replaceAll(root.toLowerCase() + "/", "/")
+                    .replaceAll(root, "/")
+                    .replaceAll(root.toLowerCase(), "/"),
             );
         }
     } finally {
