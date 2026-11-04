@@ -26,6 +26,7 @@
         "lib",
         "schemas",
         "dist",
+        "enums",
         "vendor",
         "UPSTREAM.json",
         "NOTICE.txt"
@@ -97,17 +98,5 @@
     },
     "publishConfig": {
         "access": "public"
-    },
-    "imports": {
-        "#getExePath": "./lib/getExePath.js",
-        "#enums/*": {
-            "@typescript/source": {
-                "types": "./src/enums/*.enum.ts",
-                "default": "./src/enums/*.ts"
-            },
-            "types": "./dist/enums/*.enum.d.ts",
-            "default": "./dist/enums/*.js"
-        },
-        "#vscode-jsonrpc/node": "./vendor/vscode-jsonrpc/lib/node/main.js"
     }
 }

@@ -24,7 +24,7 @@ const UPSTREAM_PKG = "packages/typescript";
 const UPSTREAM_NAME = "@typescript/typescript";
 
 // Directories copied verbatim (relative to packages/typescript).
-const VERBATIM_DIRS = ["src", "vendor", "schemas"];
+const VERBATIM_DIRS = ["src", "vendor", "schemas", "enums"];
 // Single files copied verbatim. lib/getExePath.d.ts types tsrs's own lib/getExePath.js, which has the same signature.
 const VERBATIM_FILES = ["tsconfig.base.json", "tsconfig.json", "tsconfig.dev.json", "tsconfig.dist.json", "lib/getExePath.d.ts"];
 // Deliberate tsrs changes to upstream sources, documented in each patch header and in npm/README.md.
@@ -173,6 +173,7 @@ function main() {
     const outputs = new Map();
     const patched = {};
     for (const dir of VERBATIM_DIRS) {
+        if (!fs.existsSync(path.join(upstreamDir, dir)) && dir === "enums") continue;
         for (const rel of listFiles(path.join(upstreamDir, dir))) {
             const file = `${dir}/${rel}`;
             let data = fs.readFileSync(path.join(upstreamDir, dir, rel));
