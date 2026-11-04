@@ -4,8 +4,7 @@
 // Usage:
 //   # server: built from ts-ref at the workspace pin (Cargo.toml [workspace.metadata.typescript].commit)
 //   (cd ts-ref/tsc && GOWORK=off go build -o /tmp/tsgo/tsc ./cmd/tsc)
-//   # client: the JavaScript API client of the same source (the pinned npm package)
-//   pnpm --dir /tmp/tsoracle add typescript@7.1.0-beta
+//   # client: unpack the exact published package in workspace.metadata.typescript.nightly
 //   TSRS_CODEC_TSC=/tmp/tsgo/tsc TSRS_CODEC_ORACLE=/tmp/tsoracle/node_modules/typescript \
 //     node crates/tsrs_api_codec/gen/oracle.mjs
 //
@@ -45,6 +44,9 @@ if (refHead !== pin || refDirty) {
 const tscSha256 = createHash("sha256").update(fs.readFileSync(tsc)).digest("hex");
 const tscVersion = execFileSync(tsc, ["--version"], { encoding: "utf8" }).trim();
 const pkg = JSON.parse(fs.readFileSync(path.join(oracle, "package.json"), "utf8"));
+if (pkg.name !== "typescript" || pkg.gitHead !== pin) {
+    throw new Error(`TypeScript client must have gitHead ${pin}, got ${pkg.name}@${pkg.version} (${pkg.gitHead})`);
+}
 const imp = rel => import(pathToFileURL(path.join(oracle, rel)).href);
 const { API } = await imp("dist/api/sync/api.js");
 const { encodeSourceFile, encodeNode } = await imp("dist/api/node/encoder.js");

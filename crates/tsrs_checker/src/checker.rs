@@ -1085,6 +1085,13 @@ pub struct VarianceStackEntry {
     pub(crate) type_parameters: &'static [P<Type>],
 }
 
+pub struct ResolvingObjectType {
+    pub(crate) t: P<Type>,
+    pub(crate) mapper: Option<P<TypeMapper>>,
+    pub(crate) base_types: &'static [P<Type>],
+    pub(crate) resolved_members: SymbolTable,
+}
+
 pub(crate) const MAX_SERIALIZATION_LEVEL: u32 = 2;
 
 // Checker
@@ -1218,7 +1225,7 @@ pub struct Checker {
     pub(crate) properties_types: FxHashMap<PropertiesTypesKey, P<Type>>,
     pub(crate) diagnostics: ast::DiagnosticsCollection,
     pub(crate) suggestion_diagnostics: ast::DiagnosticsCollection,
-    pub(crate) merged_symbols: crate::merged_symbols::MergedSymbols,
+    pub(crate) merged_symbols: SymbolArenaLinkStore<Cell<Option<P<Symbol>>>>,
     pub(crate) merged_exports_checked: Set<P<Symbol>>,
     pub(crate) factory: ast::NodeFactory,
     pub(crate) node_links: LinkStore<Node, NodeLinks>,
@@ -1252,6 +1259,11 @@ pub struct Checker {
     pub(crate) pattern_for_type: FxHashMap<P<Type>, P<Node>>,
     pub(crate) lazy_member_tables:
         crate::basedmap::Based<FxHashMap<P<Type>, P<LazyMemberTable>>, P<Type>>,
+    pub(crate) member_layout_cache:
+        crate::basedmap::Based<FxHashMap<CacheHashKey, P<MemberLayout>>, CacheHashKey>,
+    pub(crate) member_layout_count: u32,
+    pub(crate) layout_members: Option<P<SymbolTable>>,
+    pub(crate) layout_base_indices: Vec<Option<std::num::NonZeroU32>>,
     /// Per generic target, what `prepare_lazy_members` learned about its declared members for good
     /// (`lazy_unaffected_members`).
     pub(crate) lazy_unaffected: FxHashMap<P<Type>, crate::checker_09::LazyUnaffected>,
@@ -1450,6 +1462,7 @@ pub struct Checker {
     pub(crate) awaited_type_stack: Vec<P<Type>>,
     pub(crate) reverse_mapped_source_stack: Vec<P<Type>>,
     pub(crate) reverse_mapped_target_stack: Vec<P<Type>>,
+    pub(crate) resolving_object_type_stack: Vec<ResolvingObjectType>,
     pub(crate) reverse_expanding_flags: ExpandingFlags,
     pub(crate) free_relater: Option<P<Relater>>,
     pub(crate) subtype_relation: P<Relation>,
@@ -1734,7 +1747,7 @@ pub fn new_checker(program: &'static dyn Program) -> Box<Checker> {
         properties_types: FxHashMap::default(),
         diagnostics: ast::DiagnosticsCollection::default(),
         suggestion_diagnostics: ast::DiagnosticsCollection::default(),
-        merged_symbols: crate::merged_symbols::MergedSymbols::default(),
+        merged_symbols: SymbolArenaLinkStore::default(),
         merged_exports_checked: Set::new(),
         factory: ast::NodeFactory::default(),
         node_links: LinkStore::default(),
@@ -1767,6 +1780,10 @@ pub fn new_checker(program: &'static dyn Program) -> Box<Checker> {
         reg_exp_scanner: None,
         pattern_for_type: FxHashMap::default(),
         lazy_member_tables: crate::basedmap::Based::default(),
+        member_layout_cache: crate::basedmap::Based::default(),
+        member_layout_count: 0,
+        layout_members: None,
+        layout_base_indices: Vec::new(),
         lazy_unaffected: FxHashMap::default(),
         object_types_without_abstract_construct_signatures: FxHashMap::default(),
         structured_type_base_constraints: FxHashMap::default(),
@@ -1918,6 +1935,7 @@ pub fn new_checker(program: &'static dyn Program) -> Box<Checker> {
         awaited_type_stack: Vec::new(),
         reverse_mapped_source_stack: Vec::new(),
         reverse_mapped_target_stack: Vec::new(),
+        resolving_object_type_stack: Vec::new(),
         reverse_expanding_flags: ExpandingFlags::None,
         free_relater: None,
         subtype_relation: P::new(Relation::default()),
@@ -2276,7 +2294,7 @@ impl Checker {
             properties_types: base.properties_types.clone(),
             diagnostics: base.diagnostics.clone(),
             suggestion_diagnostics: base.suggestion_diagnostics.clone(),
-            merged_symbols: base.merged_symbols.clone(),
+            merged_symbols: base.merged_symbols.fork(),
             merged_exports_checked: base.merged_exports_checked.clone(),
             factory: ast::NodeFactory::default(),
             node_links: base.node_links.fork(),
@@ -2309,6 +2327,10 @@ impl Checker {
             reg_exp_scanner: None,
             pattern_for_type: base.pattern_for_type.clone(),
             lazy_member_tables: crate::basedmap::Based::over(&base.lazy_member_tables),
+            member_layout_cache: crate::basedmap::Based::over(&base.member_layout_cache),
+            member_layout_count: base.member_layout_count,
+            layout_members: None,
+            layout_base_indices: Vec::new(),
             lazy_unaffected: FxHashMap::default(),
             object_types_without_abstract_construct_signatures: base
                 .object_types_without_abstract_construct_signatures
@@ -2466,6 +2488,7 @@ impl Checker {
             awaited_type_stack: Vec::new(),
             reverse_mapped_source_stack: Vec::new(),
             reverse_mapped_target_stack: Vec::new(),
+            resolving_object_type_stack: Vec::new(),
             reverse_expanding_flags: base.reverse_expanding_flags,
             free_relater: None,
             subtype_relation: P::new(Relation::default()),
@@ -2598,6 +2621,7 @@ impl Checker {
                 && self.variance_stack.is_empty()
                 && self.call_resolution_stack.is_empty()
                 && self.flow_loop_stack.is_empty()
+                && self.resolving_object_type_stack.is_empty()
                 && self.current_node.is_none()
                 && self.deferred_diagnostic_callbacks.is_empty(),
             "shared graph: the seed checker is not at a file boundary: resolutions {} instantiations {} variances {} calls {} flow loops {} node {} deferred {}",

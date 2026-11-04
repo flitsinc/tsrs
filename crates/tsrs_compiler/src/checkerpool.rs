@@ -1009,7 +1009,23 @@ impl CheckerPoolImpl {
         split_ctx: Option<&Context>,
         cb: impl Fn(&mut Checker, usize, P<SourceFile>) + Sync,
     ) {
-        self.for_each_checker_group_do_inner(files, single_threaded, allow_steal, split_ctx, &cb);
+        self.for_each_checker_group_do_inner(
+            files,
+            single_threaded,
+            allow_steal,
+            split_ctx,
+            false,
+            &cb,
+        );
+    }
+
+    pub(crate) fn for_each_checker_group_do_in_reverse(
+        &self,
+        files: &[P<SourceFile>],
+        single_threaded: bool,
+        cb: impl Fn(&mut Checker, usize, P<SourceFile>) + Sync,
+    ) {
+        self.for_each_checker_group_do_inner(files, single_threaded, false, None, true, &cb);
     }
 
     // Share the scheduling body across callbacks; dispatch happens once per file, outside the checker walk.
@@ -1019,6 +1035,7 @@ impl CheckerPoolImpl {
         single_threaded: bool,
         allow_steal: bool,
         split_ctx: Option<&Context>,
+        reverse: bool,
         cb: &(dyn Fn(&mut Checker, usize, P<SourceFile>) + Sync),
     ) {
         let state = self.create_checkers();
@@ -1029,7 +1046,11 @@ impl CheckerPoolImpl {
         let index_of: Vec<Option<usize>> =
             files.iter().map(|f| state.file_indices.get(f).copied()).collect();
         let mut positions: Vec<Vec<u32>> = vec![Vec::new(); n];
-        for i in visit_order(files.len()) {
+        let mut order = visit_order(files.len());
+        if reverse {
+            order.reverse();
+        }
+        for i in order {
             // Owners change only inside a work group (stealing); this pass starts after the last one joined.
             if let Some(owner) = index_of[i]
                 .map(|fi| state.owners[fi].load(std::sync::atomic::Ordering::Relaxed) as usize)

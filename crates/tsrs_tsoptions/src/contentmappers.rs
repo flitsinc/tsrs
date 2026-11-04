@@ -59,13 +59,12 @@ pub struct Mapper {
     pub contribution_id: String,
 }
 
-// contentmapper.go:58
-const SUPPORTED_VIRTUAL_EXTENSIONS: [&str; 9] =
-    [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".json"];
-
 // contentmapper.go:62
 pub fn is_supported_virtual_extension(extension: &str) -> bool {
-    SUPPORTED_VIRTUAL_EXTENSIONS.contains(&extension)
+    matches!(
+        extension,
+        ".js" | ".jsx" | ".mjs" | ".cjs" | ".ts" | ".tsx" | ".mts" | ".cts" | ".json"
+    )
 }
 
 pub fn is_valid_extension(extension: &str) -> bool {

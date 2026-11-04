@@ -858,7 +858,10 @@ impl Parser {
 
     fn try_parse_type_expression(&mut self) -> Option<P<Node>> {
         self.skip_whitespace_or_asterisk();
-        if self.token == Kind::OpenBraceToken {
+        // An inline link starts the tag's description, not a type annotation.
+        if self.token == Kind::OpenBraceToken
+            && self.look_ahead(|p| p.parse_jsdoc_link_prefix().is_none())
+        {
             Some(self.parse_jsdoc_type_expression(false /*mayOmitBraces*/))
         } else {
             None
@@ -911,7 +914,7 @@ impl Parser {
         let (name, is_bracketed) = self.parse_bracket_name_in_property_and_param_tag(target);
         let indent_text = self.skip_whitespace_or_asterisk();
 
-        if is_name_first && self.look_ahead(|p| p.parse_jsdoc_link_prefix().is_none()) {
+        if is_name_first {
             type_expression = self.try_parse_type_expression();
         }
 

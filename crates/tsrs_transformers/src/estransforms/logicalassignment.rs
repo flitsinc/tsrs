@@ -40,7 +40,10 @@ impl LogicalAssignmentTransformer {
             _ => return self.visitor().visit_each_child(Some(node)).unwrap(),
         };
 
-        let mut left = ast::skip_parentheses(self.visitor().visit_node(Some(b.left)).unwrap());
+        let mut left = ast::skip_outer_expressions(
+            self.visitor().visit_node(Some(b.left)).unwrap(),
+            OuterExpressionKinds::Parentheses | OuterExpressionKinds::PartiallyEmittedExpressions,
+        );
         let mut assignment_target = left;
         let right = ast::skip_parentheses(self.visitor().visit_node(Some(b.right.get())).unwrap());
 

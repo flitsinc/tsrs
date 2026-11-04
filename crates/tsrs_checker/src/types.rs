@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 
 use crate::direct_bitflags as bitflags;
 use tsrs_core::sharedgraph::{OvCell, OvExact, OvOptionThinSliceCell, RawWord};
-use tsrs_core::{OptionThinSliceCell, TextPos, ThinSliceCell};
+use tsrs_core::{OptionThinSliceCell, TextPos, ThinSlice, ThinSliceCell};
 
 use crate::*;
 
@@ -2085,9 +2085,10 @@ pub struct StructuredType {
 
 #[derive(Default)]
 struct StructuredMembers {
-    members: Cell<Option<P<SymbolTable>>>,
+    members: OvExact<Option<P<SymbolTable>>>,
+    lazy: OvExact<Option<P<LazyState>>>,
     // `ThinSliceCell`s are one word each (`tsrs_core::ThinSlice`).
-    properties: ThinSliceCell<P<Symbol>>,
+    properties: OvExact<ThinSlice<P<Symbol>>>,
     signatures: ThinSliceCell<P<Signature>>, // Signatures (call + construct)
     // Count of call signatures, and index infos (2% of the resolved types on the private monorepo have any).
     count_or_index_infos: CountOrIndexInfos,
@@ -2100,9 +2101,11 @@ const _: () = assert!(
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(std::mem::size_of::<StructuredType>() == 4);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::size_of::<StructuredMembers>() == 32);
+const _: () = assert!(
+    std::mem::size_of::<StructuredMembers>() == if tsrs_core::COMPRESSED_PTRS { 32 } else { 40 }
+);
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(std::mem::size_of::<StructuredMembers>() == 24);
+const _: () = assert!(std::mem::size_of::<StructuredMembers>() == 28);
 
 /// Go's `CallSignatureCount` and `IndexInfos` in one word: `count << 1 | 1` while no non-empty index info list was
 /// set (the list reads empty, `&[]`), else a pointer to an `IndexInfosTail` holding both.
@@ -2173,20 +2176,85 @@ impl StructuredType {
     }
 
     #[inline]
-    pub(crate) fn members(&self) -> Option<P<SymbolTable>> {
+    pub(crate) fn raw_members(&self) -> Option<P<SymbolTable>> {
         self.resolved.get()?.members.get()
+    }
+    pub fn members(&self, c: &mut Checker) -> Option<P<SymbolTable>> {
+        if self.raw_members().is_none() {
+            let properties = self.properties(c);
+            if !properties.is_empty() {
+                let members = SymbolTable::with_capacity(properties.len());
+                for &member in properties {
+                    members.set(member.name(), member);
+                }
+                self.set_members(Some(members));
+            }
+        }
+        self.raw_members()
+    }
+    pub(crate) fn get_lazy_state(&self) -> Option<P<LazyState>> {
+        self.resolved.get()?.lazy.get()
+    }
+    pub(crate) fn set_lazy_state(&self, lazy: P<LazyState>) {
+        self.resolved_for_write().lazy.set(Some(lazy));
+    }
+    pub(crate) fn get_member(&self, c: &mut Checker, name: &str) -> Option<P<Symbol>> {
+        if let Some(members) = self.raw_members() {
+            return members.lookup(name);
+        }
+        let lazy = self.get_lazy_state()?;
+        let index = lazy.layout.members?.find(name)?;
+        self.get_property_at(c, index)
+    }
+    pub(crate) fn get_property_at(&self, c: &mut Checker, index: usize) -> Option<P<Symbol>> {
+        let Some(lazy) = self.get_lazy_state() else {
+            return self.resolved.get()?.properties.get().get().get(index).copied();
+        };
+        let properties = lazy.property_slots();
+        let mut member = properties[index].get();
+        if member.is_none() {
+            let symbol = lazy.layout.members.unwrap().symbol_at(index);
+            member = if let Some(base_index) = lazy.layout.base_indices[index] {
+                c.get_property_of_type(
+                    lazy.base_types[base_index.get() as usize - 1],
+                    symbol.name(),
+                )
+            } else {
+                Some(c.instantiate_symbol(symbol, lazy.mapper.get()))
+            };
+            properties[index].set(member);
+        }
+        member
+    }
+    pub(crate) fn has_properties(&self) -> bool {
+        self.resolved.get().is_some_and(|r| !r.properties.get().get().is_empty())
+            || self
+                .get_lazy_state()
+                .is_some_and(|s| s.layout.members.is_some_and(|members| !members.is_empty()))
     }
     #[inline]
     pub(crate) fn set_members(&self, members: Option<P<SymbolTable>>) {
         self.resolved_for_write().members.set(members);
     }
     #[inline]
-    pub fn properties(&self) -> &'static [P<Symbol>] {
-        self.resolved.get().map_or(&[], |r| r.properties.get())
+    pub fn properties(&self, c: &mut Checker) -> &'static [P<Symbol>] {
+        if let Some(lazy) = self.get_lazy_state()
+            && !lazy.properties_resolved.get()
+        {
+            let len = lazy.layout.members.map_or(0, |members| members.len());
+            let mut properties = Vec::with_capacity(len);
+            for index in 0..len {
+                properties
+                    .push(self.get_property_at(c, index).expect("layout member must resolve"));
+            }
+            self.set_properties(alloc_vec(properties));
+            lazy.properties_resolved.set(true);
+        }
+        self.resolved.get().map_or(&[], |r| r.properties.get().get())
     }
     #[inline]
     pub(crate) fn set_properties(&self, properties: &'static [P<Symbol>]) {
-        self.resolved_for_write().properties.set(properties);
+        self.resolved_for_write().properties.set(ThinSlice::new(properties));
     }
     /// Call signatures followed by construct signatures.
     #[inline]
@@ -2276,6 +2344,35 @@ pub struct ObjectType {
 embeds!(ObjectType, structured_type, StructuredType);
 
 // TypeReference (instantiation of an InterfaceType)
+
+pub struct LazyState {
+    pub(crate) layout: P<MemberLayout>,
+    pub(crate) mapper: MapperCell,
+    pub(crate) base_types: &'static [P<Type>],
+    pub(crate) properties_resolved: OvCell<bool>,
+    pub(crate) properties: OvExact<&'static [OvCell<Option<P<Symbol>>>]>,
+}
+
+impl LazyState {
+    pub(crate) fn property_slots(&self) -> &'static [OvCell<Option<P<Symbol>>>] {
+        if self.properties.get().is_empty() {
+            self.properties.set(alloc_vec(vec![
+                OvCell::default();
+                self.layout
+                    .members
+                    .map_or(0, |members| members.len())
+            ]));
+        }
+        self.properties.get()
+    }
+}
+
+pub struct MemberLayout {
+    pub(crate) id: u32,
+    pub(crate) members: Option<P<SymbolTable>>,
+    pub(crate) base_indices: &'static [Option<NonZeroU32>],
+    pub(crate) layout_properties: OvCell<Option<&'static [P<Symbol>]>>,
+}
 
 #[derive(Default)]
 #[repr(C)]

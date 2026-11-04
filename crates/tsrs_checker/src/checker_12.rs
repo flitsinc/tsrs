@@ -2676,7 +2676,7 @@ impl Checker {
         t.object_flags.set(object_flags);
         let data = t.as_structured_type();
         data.set_members(members);
-        let properties = self.get_named_members(members, t.symbol());
+        let properties = self.get_named_members(members);
         data.set_properties(alloc_vec(properties));
         if call_signatures.is_empty() {
             if construct_signatures.is_empty() {

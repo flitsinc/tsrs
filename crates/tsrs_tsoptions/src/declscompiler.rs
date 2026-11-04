@@ -209,6 +209,9 @@ static COMMON_OPTIONS_WITH_BUILD_ITEMS: [CommandLineOption; 29] = [
         description: Some(&diagnostics::DEDUPLICATE_PACKAGES_WITH_THE_SAME_NAME_AND_VERSION),
         default_value_description: DefaultValueDescription::Bool(true),
         affects_program_structure: true,
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -320,7 +323,7 @@ pub(crate) static COMMON_OPTIONS_WITH_BUILD: LazyLock<Vec<&'static CommandLineOp
         ]
     });
 
-static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
+static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 98] = [
     CommandLineOption {
         name: "all",
         kind: CommandLineOptionKind::Boolean,
@@ -400,6 +403,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::LANGUAGE_AND_ENVIRONMENT),
         description: Some(&diagnostics::SET_THE_JAVA_SCRIPT_LANGUAGE_VERSION_FOR_EMITTED_JAVA_SCRIPT_AND_INCLUDE_COMPATIBLE_LIBRARY_DECLARATIONS),
         default_value_description: DefaultValueDescription::ScriptTarget(ScriptTarget::LATEST_STANDARD),
+        affects_semantic_diagnostics: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -413,6 +417,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::MODULES),
         description: Some(&diagnostics::SPECIFY_WHAT_MODULE_CODE_IS_GENERATED),
         default_value_description: DefaultValueDescription::Tristate(Tristate::Unknown),
+        affects_semantic_diagnostics: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -542,6 +547,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::EMIT),
         description: Some(&diagnostics::ALLOW_IMPORTING_HELPER_FUNCTIONS_FROM_TSLIB_ONCE_PER_PROJECT_INSTEAD_OF_INCLUDING_THEM_PER_FILE),
         default_value_description: DefaultValueDescription::Bool(false),
+        affects_semantic_diagnostics: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -561,6 +567,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         description: Some(&diagnostics::ENSURE_THAT_EACH_FILE_CAN_BE_SAFELY_TRANSPILED_WITHOUT_RELYING_ON_OTHER_IMPORTS),
         transpile_option_value: Tristate::True,
         default_value_description: DefaultValueDescription::Bool(false),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -582,6 +591,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         default_value_description: DefaultValueDescription::Bool(false),
         affects_build_info: true,
         affects_semantic_diagnostics: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -622,6 +632,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::TYPE_CHECKING),
         description: Some(&diagnostics::ENABLE_ERROR_REPORTING_FOR_EXPRESSIONS_AND_DECLARATIONS_WITH_AN_IMPLIED_ANY_TYPE),
         default_value_description: DefaultValueDescription::Message(&diagnostics::X_TRUE_UNLESS_STRICT_IS_FALSE),
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -633,6 +644,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::TYPE_CHECKING),
         description: Some(&diagnostics::WHEN_TYPE_CHECKING_TAKE_INTO_ACCOUNT_NULL_AND_UNDEFINED),
         default_value_description: DefaultValueDescription::Message(&diagnostics::X_TRUE_UNLESS_STRICT_IS_FALSE),
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -644,6 +656,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::TYPE_CHECKING),
         description: Some(&diagnostics::WHEN_ASSIGNING_FUNCTIONS_CHECK_TO_ENSURE_PARAMETERS_AND_THE_RETURN_VALUES_ARE_SUBTYPE_COMPATIBLE),
         default_value_description: DefaultValueDescription::Message(&diagnostics::X_TRUE_UNLESS_STRICT_IS_FALSE),
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -655,6 +668,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::TYPE_CHECKING),
         description: Some(&diagnostics::CHECK_THAT_THE_ARGUMENTS_FOR_BIND_CALL_AND_APPLY_METHODS_MATCH_THE_ORIGINAL_FUNCTION),
         default_value_description: DefaultValueDescription::Message(&diagnostics::X_TRUE_UNLESS_STRICT_IS_FALSE),
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -677,6 +691,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::TYPE_CHECKING),
         description: Some(&diagnostics::BUILT_IN_ITERATORS_ARE_INSTANTIATED_WITH_A_T_RETURN_TYPE_OF_UNDEFINED_INSTEAD_OF_ANY),
         default_value_description: DefaultValueDescription::Message(&diagnostics::X_TRUE_UNLESS_STRICT_IS_FALSE),
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -688,6 +703,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::TYPE_CHECKING),
         description: Some(&diagnostics::ENABLE_ERROR_REPORTING_WHEN_THIS_IS_GIVEN_THE_TYPE_ANY),
         default_value_description: DefaultValueDescription::Message(&diagnostics::X_TRUE_UNLESS_STRICT_IS_FALSE),
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -699,6 +715,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::TYPE_CHECKING),
         description: Some(&diagnostics::DEFAULT_CATCH_CLAUSE_VARIABLES_AS_UNKNOWN_INSTEAD_OF_ANY),
         default_value_description: DefaultValueDescription::Message(&diagnostics::X_TRUE_UNLESS_STRICT_IS_FALSE),
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -750,6 +767,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::TYPE_CHECKING),
         description: Some(&diagnostics::INTERPRET_OPTIONAL_PROPERTY_TYPES_AS_WRITTEN_RATHER_THAN_ADDING_UNDEFINED),
         default_value_description: DefaultValueDescription::Bool(false),
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -781,6 +799,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::TYPE_CHECKING),
         description: Some(&diagnostics::ADD_UNDEFINED_TO_A_TYPE_WHEN_ACCESSED_USING_AN_INDEX),
         default_value_description: DefaultValueDescription::Bool(false),
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -811,6 +830,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::MODULES),
         description: Some(&diagnostics::SPECIFY_HOW_TYPE_SCRIPT_LOOKS_UP_A_FILE_FROM_A_GIVEN_MODULE_SPECIFIER),
         default_value_description: DefaultValueDescription::Message(&diagnostics::X_NODENEXT_IF_MODULE_IS_NODENEXT_NODE16_IF_MODULE_IS_NODE16_OR_NODE18_OTHERWISE_BUNDLER),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -831,6 +853,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::MODULES),
         description: Some(&diagnostics::SPECIFY_A_SET_OF_ENTRIES_THAT_RE_MAP_IMPORTS_TO_ADDITIONAL_LOOKUP_LOCATIONS),
         transpile_option_value: Tristate::Unknown,
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -843,6 +868,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         description: Some(&diagnostics::ALLOW_MULTIPLE_FOLDERS_TO_BE_TREATED_AS_ONE_WHEN_RESOLVING_MODULES),
         transpile_option_value: Tristate::Unknown,
         default_value_description: DefaultValueDescription::Message(&diagnostics::COMPUTED_FROM_THE_LIST_OF_INPUT_FILES),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -852,6 +880,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         allow_config_dir_template_substitution: true,
         category: Some(&diagnostics::MODULES),
         description: Some(&diagnostics::SPECIFY_MULTIPLE_FOLDERS_THAT_ACT_LIKE_SLASHNODE_MODULES_SLASH_TYPES),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -862,6 +893,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::MODULES),
         description: Some(&diagnostics::SPECIFY_TYPE_PACKAGE_NAMES_TO_BE_INCLUDED_WITHOUT_BEING_REFERENCED_IN_A_SOURCE_FILE),
         transpile_option_value: Tristate::Unknown,
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -911,6 +945,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         affects_module_resolution: true,
         category: Some(&diagnostics::MODULES),
         description: Some(&diagnostics::LIST_OF_FILE_NAME_SUFFIXES_TO_SEARCH_WHEN_RESOLVING_A_MODULE),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -922,6 +959,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         description: Some(&diagnostics::ALLOW_IMPORTS_TO_INCLUDE_TYPE_SCRIPT_FILE_EXTENSIONS_REQUIRES_MODULE_RESOLUTION_BUNDLER_AND_EITHER_NO_EMIT_OR_EMIT_DECLARATION_ONLY_TO_BE_SET),
         default_value_description: DefaultValueDescription::Bool(false),
         transpile_option_value: Tristate::Unknown,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -932,6 +970,18 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::MODULES),
         description: Some(&diagnostics::REWRITE_TS_TSX_MTS_AND_CTS_FILE_EXTENSIONS_IN_RELATIVE_IMPORT_PATHS_TO_THEIR_JAVA_SCRIPT_EQUIVALENT_IN_OUTPUT_FILES),
         default_value_description: DefaultValueDescription::Bool(false),
+        affects_emit: true,
+        ..CommandLineOption::DEFAULT
+    },
+    CommandLineOption {
+        name: "disableDynamicImportExtensionRewriting",
+        kind: CommandLineOptionKind::Boolean,
+        category: Some(&diagnostics::MODULES),
+        description: Some(&diagnostics::DISABLE_RUNTIME_REWRITING_OF_FILE_EXTENSIONS_IN_NON_LITERAL_IMPORT_AND_REQUIRE_CALLS_WHEN_REWRITE_RELATIVE_IMPORT_EXTENSIONS_IS_ENABLED),
+        default_value_description: DefaultValueDescription::Bool(false),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -941,6 +991,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::MODULES),
         description: Some(&diagnostics::USE_THE_PACKAGE_JSON_EXPORTS_FIELD_WHEN_RESOLVING_PACKAGE_IMPORTS),
         default_value_description: DefaultValueDescription::Message(&diagnostics::X_TRUE_WHEN_MODULE_RESOLUTION_IS_NODE16_NODENEXT_OR_BUNDLER_OTHERWISE_FALSE),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -950,6 +1003,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::MODULES),
         description: Some(&diagnostics::USE_THE_PACKAGE_JSON_IMPORTS_FIELD_WHEN_RESOLVING_IMPORTS),
         default_value_description: DefaultValueDescription::Message(&diagnostics::X_TRUE_WHEN_MODULE_RESOLUTION_IS_NODE16_NODENEXT_OR_BUNDLER_OTHERWISE_FALSE),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -958,6 +1014,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         affects_module_resolution: true,
         category: Some(&diagnostics::MODULES),
         description: Some(&diagnostics::CONDITIONS_TO_SET_IN_ADDITION_TO_THE_RESOLVER_SPECIFIC_DEFAULTS_WHEN_RESOLVING_IMPORTS),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -1026,6 +1085,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::LANGUAGE_AND_ENVIRONMENT),
         description: Some(&diagnostics::SPECIFY_THE_JSX_FACTORY_FUNCTION_USED_WHEN_TARGETING_REACT_JSX_EMIT_E_G_REACT_CREATE_ELEMENT_OR_H),
         default_value_description: DefaultValueDescription::Str("`React.createElement`"),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -1034,6 +1096,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::LANGUAGE_AND_ENVIRONMENT),
         description: Some(&diagnostics::SPECIFY_THE_JSX_FRAGMENT_REFERENCE_USED_FOR_FRAGMENTS_WHEN_TARGETING_REACT_JSX_EMIT_E_G_REACT_FRAGMENT_OR_FRAGMENT),
         default_value_description: DefaultValueDescription::Str("React.Fragment"),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -1065,6 +1130,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::MODULES),
         description: Some(&diagnostics::ENABLE_IMPORTING_FILES_WITH_ANY_EXTENSION_PROVIDED_A_DECLARATION_FILE_IS_PRESENT),
         default_value_description: DefaultValueDescription::Bool(false),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -1075,6 +1143,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::LANGUAGE_AND_ENVIRONMENT),
         description: Some(&diagnostics::SPECIFY_THE_OBJECT_INVOKED_FOR_CREATE_ELEMENT_THIS_ONLY_APPLIES_WHEN_TARGETING_REACT_JSX_EMIT),
         default_value_description: DefaultValueDescription::Str("`React`"),
+        affects_semantic_diagnostics: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -1211,6 +1280,7 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         category: Some(&diagnostics::EMIT),
         description: Some(&diagnostics::DISABLE_ERASING_CONST_ENUM_DECLARATIONS_IN_GENERATED_CODE),
         default_value_description: DefaultValueDescription::Bool(false),
+        affects_semantic_diagnostics: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -1301,6 +1371,9 @@ static OPTIONS_FOR_COMPILER_ITEMS: [CommandLineOption; 97] = [
         description: Some(&diagnostics::CONTROL_WHAT_METHOD_IS_USED_TO_DETECT_MODULE_FORMAT_JS_FILES),
         category: Some(&diagnostics::LANGUAGE_AND_ENVIRONMENT),
         default_value_description: DefaultValueDescription::Message(&diagnostics::X_AUTO_COLON_TREAT_FILES_WITH_IMPORTS_EXPORTS_IMPORT_META_JSX_WITH_JSX_COLON_REACT_JSX_OR_ESM_FORMAT_WITH_MODULE_COLON_NODE16_AS_MODULES),
+        affects_semantic_diagnostics: true,
+        affects_build_info: true,
+        affects_emit: true,
         ..CommandLineOption::DEFAULT
     },
     CommandLineOption {
@@ -1411,6 +1484,7 @@ pub(crate) static OPTIONS_FOR_COMPILER: LazyLock<Vec<&'static CommandLineOption>
             &OPTIONS_FOR_COMPILER_ITEMS[94],
             &OPTIONS_FOR_COMPILER_ITEMS[95],
             &OPTIONS_FOR_COMPILER_ITEMS[96],
+            &OPTIONS_FOR_COMPILER_ITEMS[97],
         ]
     });
 // END GENERATED
@@ -1481,6 +1555,10 @@ fn compiler_option_changes(
         };
     }
     for_each_compiler_options_field!(compare_fields);
+    if old_options.get_paths_base_path("") != new_options.get_paths_base_path("") {
+        changes.insert(CompilerOptionChanges::SEMANTIC_DIAGNOSTICS);
+        changes.insert(CompilerOptionChanges::EMIT);
+    }
     changes
 }
 

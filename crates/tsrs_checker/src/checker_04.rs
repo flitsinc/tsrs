@@ -3102,6 +3102,7 @@ impl Checker {
         }
         let specifier = args[0];
         if self.compiler_options.rewrite_relative_import_extensions.is_true()
+            && !self.compiler_options.disable_dynamic_import_extension_rewriting.is_true()
             && !is_string_literal_like(specifier)
         {
             self.check_external_emit_helpers(
@@ -3201,6 +3202,7 @@ impl Checker {
     // checker.go:8496
     fn check_call_expression(&mut self, node: P<Node>, check_mode: CheckMode) -> P<Type> {
         if self.compiler_options.rewrite_relative_import_extensions.is_true()
+            && !self.compiler_options.disable_dynamic_import_extension_rewriting.is_true()
             && is_in_js_file(node)
             && is_require_call(node, false /*requireStringLiteralLikeArgument*/)
             && !is_string_literal_like(node.arguments()[0])

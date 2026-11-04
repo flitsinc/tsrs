@@ -99,6 +99,7 @@ pub struct CompilerOptions {
     pub resolve_package_json_exports: Tristate,
     pub resolve_package_json_imports: Tristate,
     pub remove_comments: Tristate,
+    pub disable_dynamic_import_extension_rewriting: Tristate,
     pub rewrite_relative_import_extensions: Tristate,
     pub react_namespace: String,
     pub root_dir: String,

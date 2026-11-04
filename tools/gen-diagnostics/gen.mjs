@@ -2,8 +2,6 @@
 // Generate the Rust diagnostic catalog from the pinned Go declarations.
 import { ROOT, read, write, main, args, requireValue, isMain } from "../lib/cli.mjs";
 import path from "node:path";
-import fs from "node:fs";
-import { gzipSync } from "node:zlib";
 import { constantNames, rustSurface } from "../lib/rust-names.mjs";
 const flags = ["reportsUnnecessary", "elidedInCompatibilityPyramid", "reportsDeprecated"];
 
@@ -103,21 +101,5 @@ if (isMain(import.meta.url))
             "",
         );
         write(path.join(ROOT, "crates/tsrs_diagnostics/src/generated.rs"), rustSurface(out.join("\n"), SURFACE));
-        // Archived translations may keep obsolete handback keys, but runtime catalogs follow the active English keys.
-        const activeKeys = new Set(messages.map((message) => message.key));
-        const localeDirectory = path.join(ROOT, "crates/tsrs_diagnostics/loc");
-        for (const name of fs.readdirSync(localeDirectory).sort()) {
-            if (!name.endsWith(".generated.json")) {
-                continue;
-            }
-            const translations = JSON.parse(read(path.join(localeDirectory, name)));
-            const active = Object.fromEntries(
-                Object.keys(translations).sort().filter((key) => activeKeys.has(key)).map((key) => [key, translations[key]]),
-            );
-            write(
-                path.join(localeDirectory, name.slice(0, -".generated.json".length) + ".json.gz"),
-                gzipSync(JSON.stringify(active), { level: 9 }),
-            );
-        }
         console.log(`wrote ${messages.length} messages to crates/tsrs_diagnostics/src/generated.rs`);
     });

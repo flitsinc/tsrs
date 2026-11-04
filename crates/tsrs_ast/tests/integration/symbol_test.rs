@@ -215,3 +215,40 @@ fn index_finds_every_key_through_growth_and_deletes() {
         assert_eq!(table.entries(), expected);
     }
 }
+
+#[test]
+fn member_layout_table_reuse_keeps_clones_and_positions_independent() {
+    for count in [2, 40] {
+        let table = SymbolTable::new();
+        let names: Vec<&'static str> =
+            (0..count).map(|i| &*Box::leak(format!("member{i}").into_boxed_str())).collect();
+        let original: Vec<_> =
+            names.iter().map(|&name| Symbol::new(SymbolFlags::Property, name)).collect();
+        for (i, (&name, &symbol)) in names.iter().zip(&original).enumerate() {
+            assert!(table.add_if_absent(name, symbol));
+            assert!(!table.add_if_absent(name, Symbol::new(SymbolFlags::Property, "other")));
+            assert_eq!(table.find(name), Some(i));
+            assert_eq!(table.symbol_at(i), symbol);
+        }
+        let cloned = table.clone_table();
+        table.clear();
+        assert!(table.is_empty());
+        for &name in &names {
+            assert!(table.find(name).is_none());
+        }
+        // A later layout can be smaller than the previous indexed table. Its clone must rebuild
+        // a lookup filter from the live entries, while preserving aliased keys and insertion order.
+        let aliased = Symbol::new(SymbolFlags::Property, "different");
+        assert!(table.add_if_absent("alias", aliased));
+        assert_eq!(table.find("alias"), Some(0));
+        assert_eq!(table.symbol_at(0), aliased);
+        let smaller = table.clone_table();
+        table.clear();
+        assert_eq!(smaller.lookup("alias"), Some(aliased));
+        for (i, (&name, &symbol)) in names.iter().zip(&original).enumerate() {
+            assert_eq!(cloned.find(name), Some(i));
+            assert_eq!(cloned.symbol_at(i), symbol);
+            assert!(smaller.find(name).is_none());
+        }
+    }
+}

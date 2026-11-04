@@ -47,6 +47,7 @@ pub fn program_to_snapshot(
     if to.snapshot.can_use_incremental_state() {
         to.reuse_from_old_program();
         to.compute_program_file_changes();
+        to.handle_global_file_order_change();
         to.handle_file_delete();
         to.handle_global_scope_change();
         to.handle_pending_emit();
@@ -89,7 +90,44 @@ fn for_each_deleted_file(
     });
 }
 
+pub fn global_file_order_changed(old_snapshot: &Snapshot, new_snapshot: &Snapshot) -> bool {
+    let is_shared_global = |path: &Path| {
+        old_snapshot.file_infos.load(path).is_some_and(|info| info.affects_global_scope)
+            && new_snapshot.file_infos.load(path).is_some_and(|info| info.affects_global_scope)
+    };
+    let mut old_index = 0;
+    for path in &new_snapshot.file_order {
+        if !is_shared_global(path) {
+            continue;
+        }
+        while old_index < old_snapshot.file_order.len()
+            && !is_shared_global(&old_snapshot.file_order[old_index])
+        {
+            old_index += 1;
+        }
+        if old_index == old_snapshot.file_order.len() || old_snapshot.file_order[old_index] != *path
+        {
+            return true;
+        }
+        old_index += 1;
+    }
+    false
+}
+
 impl ToProgramSnapshot {
+    fn handle_global_file_order_change(&self) {
+        let Some(old_program) = self.old_program else {
+            return;
+        };
+        if !global_file_order_changed(&old_program.snapshot, &self.snapshot) {
+            return;
+        }
+        for file in self.program.get_source_files() {
+            self.snapshot.add_file_to_change_set(file.path().clone());
+            self.snapshot.semantic_diagnostics_per_file.delete(file.path());
+            self.snapshot.emit_diagnostics_per_file.delete(file.path());
+        }
+    }
     // programtosnapshot.go:50
     fn reuse_from_old_program(&self) {
         if let Some(old_program) = self.old_program {

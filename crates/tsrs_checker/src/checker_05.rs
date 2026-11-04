@@ -1135,10 +1135,12 @@ impl Checker {
                     if !diags.is_empty() {
                         let mut diagnostic = diags[0];
                         if head_message.is_some() {
+                            let type_argument_text = self.type_to_string(type_argument, None);
+                            let constraint_text = self.type_to_string(target, None);
                             diagnostic = ast::new_diagnostic_chain(
                                 diagnostic,
                                 &diagnostics::TYPE_0_DOES_NOT_SATISFY_THE_CONSTRAINT_1,
-                                &[],
+                                &[&type_argument_text, &constraint_text],
                             );
                         }
                         self.add_diagnostic(diagnostic);

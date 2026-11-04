@@ -47,27 +47,46 @@ impl ExponentiationTransformer {
         let target: P<Node>;
         let value: P<Node>;
         let b = node.as_binary_expression();
-        let left = self.visitor().visit_node(Some(b.left)).unwrap();
+        let left = ast::skip_outer_expressions(
+            self.visitor().visit_node(Some(b.left)).unwrap(),
+            OuterExpressionKinds::Parentheses | OuterExpressionKinds::PartiallyEmittedExpressions,
+        );
         let right = self.visitor().visit_node(Some(b.right.get())).unwrap();
+        let mut expression_temp = None;
+        let mut obj_expr = None;
+        if ast::is_access_expression(left) {
+            let expression = left.expression().unwrap();
+            expression_temp = Some(expression);
+            obj_expr = Some(expression);
+            if expression.kind() != Kind::SuperKeyword {
+                let temp = f.new_temp_variable();
+                self.emit_context().add_variable_declaration(temp);
+                expression_temp = Some(temp);
+                let assignment = f.new_assignment_expression(temp, expression);
+                assignment.set_loc(expression.loc());
+                obj_expr = Some(assignment);
+            }
+        }
         if ast::is_element_access_expression(left) {
             // Transforms `a[x] **= b` into `(_a = a)[_x = x] = Math.pow(_a[_x], b)`
-            let expression_temp = f.new_temp_variable();
-            self.emit_context().add_variable_declaration(expression_temp);
             let argument_expression_temp = f.new_temp_variable();
             self.emit_context().add_variable_declaration(argument_expression_temp);
 
-            let obj_expr = f.new_assignment_expression(expression_temp, left.expression().unwrap());
-            obj_expr.set_loc(left.expression().unwrap().loc());
             let access_expr = f.new_assignment_expression(
                 argument_expression_temp,
                 left.as_element_access_expression().argument_expression,
             );
             access_expr.set_loc(left.as_element_access_expression().argument_expression.loc());
 
-            target = f.new_element_access_expression(obj_expr, None, access_expr, NodeFlags::None);
+            target = f.new_element_access_expression(
+                obj_expr.unwrap(),
+                None,
+                access_expr,
+                NodeFlags::None,
+            );
 
             value = f.new_element_access_expression(
-                expression_temp,
+                expression_temp.unwrap(),
                 None,
                 argument_expression_temp,
                 NodeFlags::None,
@@ -75,13 +94,8 @@ impl ExponentiationTransformer {
             value.set_loc(left.loc());
         } else if ast::is_property_access_expression(left) {
             // Transforms `a.x **= b` into `(_a = a).x = Math.pow(_a.x, b)`
-            let expression_temp = f.new_temp_variable();
-            self.emit_context().add_variable_declaration(expression_temp);
-            let assignment =
-                f.new_assignment_expression(expression_temp, left.expression().unwrap());
-            assignment.set_loc(left.expression().unwrap().loc());
             target = f.new_property_access_expression(
-                assignment,
+                obj_expr.unwrap(),
                 None,
                 left.name().unwrap(),
                 NodeFlags::None,
@@ -89,7 +103,7 @@ impl ExponentiationTransformer {
             target.set_loc(left.loc());
 
             value = f.new_property_access_expression(
-                expression_temp,
+                expression_temp.unwrap(),
                 None,
                 left.name().unwrap(),
                 NodeFlags::None,

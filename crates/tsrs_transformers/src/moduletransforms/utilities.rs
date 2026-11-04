@@ -23,7 +23,7 @@ pub fn rewrite_module_specifier(
     use_case_sensitive_file_names: bool,
 ) -> Option<P<Node>> {
     let node = node?;
-    if !ast::is_string_literal(node)
+    if !ast::is_string_literal_like(node)
         || !compiler_options.rewrite_relative_import_extensions.is_true()
     {
         return Some(node);
@@ -42,9 +42,17 @@ pub fn rewrite_module_specifier(
         )
     };
     if updated_text != node.text() {
-        let updated = emit_context
-            .factory
-            .new_string_literal(alloc_str(&updated_text), node.as_string_literal().token_flags());
+        let updated = if ast::is_string_literal(node) {
+            emit_context.factory.new_string_literal(
+                alloc_str(&updated_text),
+                node.as_string_literal().token_flags(),
+            )
+        } else {
+            emit_context.factory.new_no_substitution_template_literal(
+                alloc_str(&updated_text),
+                node.as_no_substitution_template_literal().template_flags(),
+            )
+        };
         emit_context.set_original(updated, node);
         emit_context.assign_comment_and_source_map_ranges(updated, node);
         return Some(updated);

@@ -155,7 +155,7 @@ func (d *dumper) visit(n *ast.Node) bool {
 	case ast.KindClassStaticBlockDeclaration:
 		ret = n.AsClassStaticBlockDeclaration().ReturnFlowNode
 	case ast.KindCaseClause, ast.KindDefaultClause:
-		if t := n.AsCaseOrDefaultClause().FallthroughFlowNode; t != nil {
+		if t := n.CaseOrDefaultClauseData().FallthroughFlowNode; t != nil {
 			d.sb.WriteString(" t=" + d.flowRef(t))
 		}
 	}

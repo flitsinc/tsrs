@@ -67,6 +67,7 @@ struct Binder {
     active_label_list: Vec<ActiveLabel>,
     emit_flags: NodeFlags,
     seen_this_keyword: bool,
+    seen_common_js_module_indicator: bool,
     has_explicit_return: bool,
     has_flow_effects: bool,
     in_assignment_pattern: bool,
@@ -175,6 +176,7 @@ impl Binder {
             active_label_list: Vec::new(),
             emit_flags: NodeFlags::None,
             seen_this_keyword: false,
+            seen_common_js_module_indicator: false,
             has_explicit_return: false,
             has_flow_effects: false,
             in_assignment_pattern: false,
@@ -1198,7 +1200,7 @@ impl Binder {
 
     fn bind_source_file_if_external_module(&mut self) {
         Self::set_export_context_flag(self.file.as_node());
-        if ast::is_external_or_common_js_module(self.file) {
+        if self.is_external_or_common_js_module() {
             self.bind_source_file_as_external_module();
         } else if ast::is_json_source_file(self.file) {
             self.bind_source_file_as_external_module();
@@ -1477,26 +1479,38 @@ impl Binder {
     fn bind_call_expression(&mut self, node: P<Node>) {
         // We're only inspecting call expressions to detect CommonJS modules, so we can skip
         // this check if we've already seen the module indicator
-        if self.file.common_js_module_indicator.get().is_none()
+        if !self.seen_common_js_module_indicator
             && ast::is_require_call(node, false /*requireStringLiteralLikeArgument*/)
         {
             self.set_common_js_module_indicator(node);
         }
     }
 
-    fn set_common_js_module_indicator(&mut self, node: P<Node>) -> bool {
-        if let Some(external_module_indicator) = self.file.external_module_indicator.get()
-            && external_module_indicator != self.file.as_node()
-        {
+    // The parser determines whether the file is CommonJS. Create its symbol at the
+    // first construct in the walk to preserve symbol creation order.
+    fn set_common_js_module_indicator(&mut self, _node: P<Node>) -> bool {
+        if self.file.common_js_module_indicator.get().is_none() {
+            assert!(
+                self.file
+                    .external_module_indicator
+                    .get()
+                    .is_some_and(|node| node != self.file.as_node()),
+                "parser missed a CommonJS module indicator"
+            );
             return false;
         }
-        if self.file.common_js_module_indicator.get().is_none() {
-            self.file.common_js_module_indicator.set(Some(node));
+        if !self.seen_common_js_module_indicator {
+            self.seen_common_js_module_indicator = true;
             if self.file.external_module_indicator.get().is_none() {
                 self.bind_source_file_as_external_module();
             }
         }
         true
+    }
+
+    // A CommonJS file counts as a module once the walk reaches its first CommonJS construct.
+    fn is_external_or_common_js_module(&self) -> bool {
+        self.file.external_module_indicator.get().is_some() || self.seen_common_js_module_indicator
     }
 
     fn bind_class_like_declaration(&mut self, node: P<Node>) {
@@ -1991,11 +2005,7 @@ impl Binder {
             Kind::ModuleDeclaration => {
                 self.declare_module_member(node, symbol_flags, symbol_excludes);
             }
-            Kind::SourceFile
-                if ast::is_external_or_common_js_module(
-                    self.container().as_source_file().as_p(),
-                ) =>
-            {
+            Kind::SourceFile if self.is_external_or_common_js_module() => {
                 self.declare_module_member(node, symbol_flags, symbol_excludes);
             }
             _ => {
@@ -2450,13 +2460,17 @@ impl Binder {
                     );
                 }
             }
-            if self.file.common_js_module_indicator.get().is_some() {
+            assert_eq!(
+                self.seen_common_js_module_indicator,
+                self.file.common_js_module_indicator.get().is_some(),
+                "binder missed a CommonJS module indicator"
+            );
+            if self.seen_common_js_module_indicator {
                 self.declare_common_js_variable("module");
                 self.declare_common_js_variable("exports");
             }
         }
-        if ast::is_source_file(node)
-            && ast::is_external_or_common_js_module(node.as_source_file().as_p())
+        if ast::is_source_file(node) && self.is_external_or_common_js_module()
             || ast::is_ambient_module(node)
         {
             Self::bind_common_js_type_exports(node.symbol().unwrap());
