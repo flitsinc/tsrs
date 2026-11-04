@@ -748,6 +748,13 @@ impl Snapshot {
                     .err();
             }
 
+            if change.reason == UpdateReason::IdleCleanDiskCache {
+                project_collection_builder.cleanup_configured_projects(
+                    Some(&Set::default()),
+                    &logger.fork("cleanupConfiguredProjects"),
+                );
+            }
+
             for uri in &change.resource_request.documents {
                 project_collection_builder.did_request_file(
                     uri,

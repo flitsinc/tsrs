@@ -750,7 +750,7 @@ impl ProjectCollectionBuilder {
     // project is deleted, the inferred project roots are recomputed, and the config file
     // registry is cleaned up. This is the shared mechanism that keeps the set of loaded
     // projects minimal for both LSP file opens and API file opens/closes.
-    fn cleanup_configured_projects(&self, retain: Option<&Set<Path>>, logger: &LogTree) {
+    pub(crate) fn cleanup_configured_projects(&self, retain: Option<&Set<Path>>, logger: &LogTree) {
         let to_remove_projects: RefCell<Set<Path>> = RefCell::new(Set::default());
         self.configured_projects.range(|entry| {
             to_remove_projects.borrow_mut().add(entry.key().0);
