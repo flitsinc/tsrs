@@ -277,13 +277,9 @@ fn get_token_at_position_worker(
         })
     };
 
+    let mut visitor = get_node_visitor(Some(visit_node), Some(visit_node_list));
     loop {
-        visit_each_child_and_jsdoc(
-            current,
-            source_file,
-            Some(Rc::clone(&visit_node)),
-            Some(Rc::clone(&visit_node_list)),
-        );
+        visit_each_child_and_jsdoc_worker(current, source_file, &mut visitor);
         // If prevSubtree was set on the last iteration, it ends at the target position.
         // Check if the rightmost token of prevSubtree should be returned based on the
         // `includePrecedingTokenAtEndPosition` callback.
@@ -401,17 +397,25 @@ pub fn visit_each_child_and_jsdoc(
     visit_nodes: Option<VisitNodesFn>,
 ) {
     let mut visitor = get_node_visitor(visit_node, visit_nodes);
+    visit_each_child_and_jsdoc_worker(node, source_file, &mut visitor);
+}
+
+fn visit_each_child_and_jsdoc_worker(
+    node: P<Node>,
+    source_file: P<SourceFile>,
+    visitor: &mut NodeVisitor,
+) {
     for &jsdoc in node.jsdoc(Some(source_file.get())) {
         match visitor.hooks.visit_node.clone() {
             Some(hook) => {
-                hook(Some(jsdoc), &mut visitor);
+                hook(Some(jsdoc), visitor);
             }
             _ => {
                 visitor.visit_node(Some(jsdoc));
             }
         }
     }
-    node.visit_each_child(&mut visitor);
+    node.visit_each_child(visitor);
 }
 
 // tokens.go:330
