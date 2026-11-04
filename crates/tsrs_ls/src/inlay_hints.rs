@@ -18,6 +18,7 @@ use crate::astnav;
 use crate::languageservice::LanguageService;
 use crate::lsconv::{self, Converters};
 use crate::lsutil::{self, IncludeInlayParameterNameHints, InlayHintsPreferences, QuotePreference};
+use crate::signaturehelp::get_required_tuple_element_count;
 use crate::spanmap::Feature;
 use crate::utilities::get_leading_comment_ranges_of_node;
 
@@ -184,41 +185,50 @@ impl InlayHintState<'_> {
 
         let signature = self.checker.get_resolved_signature_exported(expr);
 
+        let mut argument_count = Some(args.len());
+        let mut last_spread_index = None;
+        for (index, &arg) in args.iter().enumerate() {
+            if ast::is_spread_element(ast::skip_parentheses(arg)) {
+                argument_count = None;
+                last_spread_index = Some(index);
+            }
+        }
         let mut signature_param_pos: usize = 0;
-        for &original_arg in args {
+        let mut has_uncertain_tuple_spread = false;
+        for (index, &original_arg) in args.iter().enumerate() {
             let arg = ast::skip_parentheses(original_arg);
+            let mut spread_args = 0;
+            let mut skip_spread_hint = false;
+            if ast::is_spread_element(arg) {
+                let spread_type = self.checker.get_type_at_location(arg.expression().unwrap());
+                if spread_type.is_tuple_type() {
+                    let tuple_type = spread_type.target().unwrap().as_tuple_type();
+                    spread_args = get_required_tuple_element_count(tuple_type);
+                    has_uncertain_tuple_spread |= spread_args < tuple_type.element_infos().len();
+                    skip_spread_hint = tuple_type.fixed_length() == 0;
+                }
+            }
             if should_show_literal_parameter_name_hints_only(self.preferences)
                 && !is_hintable_literal(arg)
             {
                 signature_param_pos += 1;
                 continue;
             }
-
-            let mut spread_args = 0;
-            if ast::is_spread_element(arg) {
-                let spread_type = self.checker.get_type_at_location(arg.expression().unwrap());
-                if spread_type.is_tuple_type() {
-                    let tuple_type = spread_type.target().unwrap().as_tuple_type();
-                    let element_flags = tuple_type.element_flags();
-                    let fixed_length = tuple_type.fixed_length();
-                    if fixed_length == 0 {
-                        continue;
-                    }
-                    let required_args = element_flags
-                        .iter()
-                        .position(|f| !f.intersects(ElementFlags::Required))
-                        .unwrap_or(fixed_length);
-                    if required_args > 0 {
-                        spread_args = required_args;
-                    }
-                }
+            if skip_spread_hint {
+                continue;
             }
-
-            let identifier_info =
-                self.get_parameter_identifier_info_at_position(signature, signature_param_pos);
+            let offset_from_end =
+                last_spread_index.filter(|&last| index > last).map(|_| args.len() - index);
+            let identifier_info = self.get_parameter_identifier_info_at_position(
+                signature,
+                signature_param_pos,
+                argument_count,
+                offset_from_end,
+                has_uncertain_tuple_spread && !ast::is_spread_element(arg),
+            );
             signature_param_pos += if spread_args > 0 { spread_args } else { 1 };
             let Some(identifier_info) = identifier_info else {
-                return;
+                continue;
             };
 
             let parameter = identifier_info.parameter;
@@ -1016,10 +1026,16 @@ impl InlayHintState<'_> {
         &mut self,
         signature: P<Signature>,
         pos: usize,
+        argument_count: Option<usize>,
+        offset_from_end: Option<usize>,
+        uncertain_tuple_spread: bool,
     ) -> Option<ParameterInfo> {
         let parameters = signature.parameters();
         let param_count = parameters.len() - usize::from(signature.has_rest_parameter());
         if pos < param_count {
+            if uncertain_tuple_spread {
+                return None;
+            }
             let param = parameters[pos];
             let param_id = get_parameter_declaration_identifier(param)?;
             return Some(ParameterInfo {
@@ -1040,15 +1056,45 @@ impl InlayHintState<'_> {
 
         let rest_type = self.checker.get_type_of_symbol(rest_parameter);
         if rest_type.is_tuple_type() {
-            let element_infos = rest_type.target().unwrap().as_tuple_type().element_infos();
-            let mut associated_names: Vec<Option<P<Node>>> =
-                Vec::with_capacity(element_infos.len());
-            associated_names.extend(
-                element_infos.iter().map(|element_info| element_info.labeled_declaration()),
-            );
-            let index = pos - param_count;
-            if index < associated_names.len()
-                && let Some(associated_name) = associated_names[index]
+            let tuple_type = rest_type.target().unwrap().as_tuple_type();
+            let element_infos = tuple_type.element_infos();
+            let mut index = pos - param_count;
+            let rest_argument_count =
+                argument_count.and_then(|count| count.checked_sub(param_count));
+            let first_variable_index = tuple_type.fixed_length();
+            let trailing_fixed_count =
+                checker::checker_11::get_end_element_count(tuple_type, ElementFlags::Fixed);
+            let required_trailing_count =
+                checker::checker_11::get_end_element_count(tuple_type, ElementFlags::Required);
+            if uncertain_tuple_spread
+                && offset_from_end.is_none_or(|offset| offset > required_trailing_count)
+            {
+                return None;
+            }
+            let variable_count =
+                element_infos.len().saturating_sub(first_variable_index + trailing_fixed_count);
+            if trailing_fixed_count > 0 && variable_count > 0 {
+                if let Some(offset) =
+                    offset_from_end.filter(|&offset| offset <= required_trailing_count)
+                {
+                    index = element_infos.len() - offset;
+                } else if offset_from_end.is_some_and(|offset| offset > trailing_fixed_count) {
+                    return None;
+                } else if let Some(count) = rest_argument_count
+                    .filter(|&count| count >= first_variable_index + trailing_fixed_count)
+                {
+                    let trailing_start = count - trailing_fixed_count;
+                    if index >= trailing_start {
+                        index = element_infos.len() - (count - index);
+                    } else if index >= first_variable_index
+                        && (variable_count > 1 || index > first_variable_index)
+                    {
+                        return None;
+                    }
+                }
+            }
+            if index < element_infos.len()
+                && let Some(associated_name) = element_infos[index].labeled_declaration()
             {
                 let name = associated_name.name().unwrap();
                 assert!(ast::is_identifier(name));
@@ -1067,6 +1113,9 @@ impl InlayHintState<'_> {
             return None;
         }
 
+        if uncertain_tuple_spread {
+            return None;
+        }
         if pos == param_count {
             return Some(ParameterInfo {
                 parameter: rest_id,

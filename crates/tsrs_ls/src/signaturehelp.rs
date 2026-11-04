@@ -1510,23 +1510,20 @@ fn get_spread_element_count(node: P<Node>, c: &mut Checker) -> usize {
     let spread_type = c.get_type_at_location(node.expression().unwrap());
     if checker::is_tuple_type_exported(spread_type) {
         let tuple_type = spread_type.target().unwrap().as_tuple_type();
-        let element_flags = tuple_type.element_flags();
-        let fixed_length = tuple_type.fixed_length();
-        if fixed_length == 0 {
-            return 0;
-        }
-
-        let first_optional_index =
-            element_flags.iter().position(|f| !f.intersects(ElementFlags::Required));
-        let Some(first_optional_index) = first_optional_index else {
-            return fixed_length;
-        };
-        return first_optional_index;
+        return get_required_tuple_element_count(tuple_type);
     }
     0
 }
 
 // signaturehelp.go:1098
+pub(crate) fn get_required_tuple_element_count(tuple_type: &'static checker::TupleType) -> usize {
+    let fixed_length = tuple_type.fixed_length();
+    tuple_type.element_infos()[..fixed_length]
+        .iter()
+        .position(|info| !info.tuple_element_flags().intersects(ElementFlags::Required))
+        .unwrap_or(fixed_length)
+}
+
 fn get_argument_index(
     node: P<Node>,
     arguments: Option<P<NodeList>>,
