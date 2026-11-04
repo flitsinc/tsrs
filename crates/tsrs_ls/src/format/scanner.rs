@@ -181,6 +181,10 @@ impl FormattingScanner {
 }
 
 // scanner.go:155
+fn should_rescan_less_than_slash_token(container: P<Node>) -> bool {
+    matches!(container.kind(), Kind::JsxClosingElement | Kind::JsxClosingFragment)
+}
+
 fn should_rescan_slash_token(container: P<Node>) -> bool {
     container.kind() == Kind::RegularExpressionLiteral
 }
@@ -210,6 +214,7 @@ enum ScanAction {
     RescanJsxIdentifier,
     RescanJsxText,
     RescanJsxAttributeValue,
+    RescanLessThanSlashToken,
 }
 
 // scanner.go:184
@@ -240,6 +245,8 @@ impl FormattingScanner {
             ScanAction::RescanJsxText
         } else if should_rescan_jsx_attribute_value(n) {
             ScanAction::RescanJsxAttributeValue
+        } else if should_rescan_less_than_slash_token(n) {
+            ScanAction::RescanLessThanSlashToken
         } else {
             ScanAction::Scan
         };
@@ -337,6 +344,13 @@ impl FormattingScanner {
             ScanAction::RescanJsxAttributeValue => {
                 self.last_scan_action = ScanAction::RescanJsxAttributeValue;
                 return self.s.re_scan_jsx_attribute_value();
+            }
+            ScanAction::RescanLessThanSlashToken => {
+                if token == Kind::LessThanToken {
+                    // The parser scans `</` as one token, so a `/*` after `<` is not a comment.
+                    self.last_scan_action = ScanAction::RescanLessThanSlashToken;
+                    return self.s.re_scan_jsx_token(false /*allowMultilineJsxText*/);
+                }
             }
             ScanAction::Scan => {
                 // no rescan needed; the token was already produced by the normal scan
