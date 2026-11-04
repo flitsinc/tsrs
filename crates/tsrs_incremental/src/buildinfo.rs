@@ -940,6 +940,16 @@ impl BuildInfo {
         let mut options = tsrs_core::CompilerOptions::default();
         if let Some(entries) = &self.options {
             for (option, value) in entries {
+                if option == "pathsBasePath" {
+                    if let Value::String(path) = value
+                        && !path.is_empty()
+                        && !build_info_directory.is_empty()
+                    {
+                        options.paths_base_path =
+                            tspath::get_normalized_absolute_path(path, build_info_directory);
+                    }
+                    continue;
+                }
                 let value = json_to_option_value(value);
                 if !build_info_directory.is_empty()
                     && let Some(result) = tsoptions::convert_option_to_absolute_path(

@@ -341,23 +341,20 @@ impl<'a> EmitFilesHandler<'a> {
                     let source_file = data.source_file.unwrap();
                     let mut emit_signature = String::new();
                     let info = self.program.snapshot.file_infos.load(source_file.path()).unwrap();
-                    if info.signature == info.version {
-                        let signature = self.program.snapshot.compute_signature_with_diagnostics(
-                            source_file,
-                            text,
-                            data,
-                        );
-                        // With d.ts diagnostics they are also part of the signature so emitSignature will be different from it since its just hash of d.ts
-                        if data.diagnostics.is_empty() {
-                            emit_signature.clone_from(&signature);
-                        }
-                        if signature != info.version {
-                            // Update it
-                            self.signatures
-                                .lock()
-                                .unwrap()
-                                .insert(source_file.path().clone(), signature);
-                        }
+                    let signature = self.program.snapshot.compute_signature_with_diagnostics(
+                        source_file,
+                        text,
+                        data,
+                    );
+                    // With d.ts diagnostics they are also part of the signature so emitSignature will be different from it since its just hash of d.ts
+                    if data.diagnostics.is_empty() {
+                        emit_signature.clone_from(&signature);
+                    }
+                    if signature != info.signature {
+                        self.signatures
+                            .lock()
+                            .unwrap()
+                            .insert(source_file.path().clone(), signature);
                     }
 
                     // Store d.ts emit hash so later can be compared to check if d.ts has changed.

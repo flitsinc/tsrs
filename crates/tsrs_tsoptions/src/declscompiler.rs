@@ -1481,6 +1481,10 @@ fn compiler_option_changes(
         };
     }
     for_each_compiler_options_field!(compare_fields);
+    if old_options.get_paths_base_path("") != new_options.get_paths_base_path("") {
+        changes.insert(CompilerOptionChanges::SEMANTIC_DIAGNOSTICS);
+        changes.insert(CompilerOptionChanges::EMIT);
+    }
     changes
 }
 
