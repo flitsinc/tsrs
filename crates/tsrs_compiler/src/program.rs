@@ -131,7 +131,8 @@ impl ProgramOptions {
             canonical_diagnostics: true,
             checker_regions: false,
             checker_diagnostic_regions: false,
-            regions: None,
+            // A fallback full build owns new loader data; only successful clones share the old build's regions.
+            regions: config.regions.map(|_| std::sync::Arc::default()),
             reuse_synthetic_imports: false,
         }
     }

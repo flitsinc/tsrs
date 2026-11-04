@@ -702,6 +702,9 @@ impl Project {
             opts.typings_location = typings_location;
             opts.create_checker_pool = Some(create_checker_pool);
             opts.create_module_resolver = Some(create_module_resolver);
+            // Loader jobs allocate on the compiler pool as well as this thread. ProgramConfig keeps this set
+            // alive across clones, and the last program using the build's data releases it.
+            opts.regions = Some(Arc::default());
             new_program_result = new_program(opts);
         }
         let cleanup = cleanup_module_resolver.lock().unwrap().take();
