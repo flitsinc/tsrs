@@ -17,7 +17,7 @@ for (const op of ["update", "create"]) for (const notify of ["target", "alias", 
     writeFileSync(join(p, "target", "a.ts"), "export const a: number = 'bad';\n");
     const c = new Client({ tsserverPath: exe, cwd: root });
     const s1 = c.apiRequest("createSnapshot", { openProjects: [config], fileSystem: { kind: "layer", files: {}, symlinks: { [join(p, "link")]: { target: join(p, "target") } } } });
-    const proj = s1.projects[0].id;
+    const proj = s1.projects[0].handle;
     const diags = s => c.apiRequest("getSemanticDiagnostics", { snapshot: s, project: proj }).length;
     const before = diags(s1.snapshot);
     writeFileSync(join(p, "target", "a.ts"), "export const a: number = 1;\n");
@@ -27,7 +27,7 @@ for (const op of ["update", "create"]) for (const notify of ["target", "alias", 
         ? c.apiRequest("updateSnapshot", { snapshot: s1.snapshot, changes: { openProjects: [config], fileNotifications: { changed } } })
         // A new snapshot with the same layer: notifications invalidate the session's cached file state.
         : c.apiRequest("createSnapshot", { openProjects: [config], fileSystem: layer, fileNotifications: { changed } });
-    const proj2 = s2.projects[0]?.id ?? proj;
+    const proj2 = s2.projects[0]?.handle ?? proj;
     out[`${op}/${notify}`] = { before, after: c.apiRequest("getSemanticDiagnostics", { snapshot: s2.snapshot, project: proj2 }).length };
     c.close();
     rmSync(root, { recursive: true, force: true });
