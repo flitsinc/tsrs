@@ -18,7 +18,10 @@ fn watched_file_create_reloads_an_existing_cached_dependency() {
     let main = lsproto::DocumentUri("file:///src/main.ts".to_string());
     let ls = session.get_language_service(&ctx, &main).unwrap();
     let file = ls.get_program().get_source_file("/src/main.ts").unwrap();
-    assert!(ls.get_program().get_semantic_diagnostics(&ctx, Some(file)).is_empty());
+    assert_eq!(
+        ls.get_program().get_semantic_diagnostics(&ctx, Some(file)),
+        [] as [tsrs_core::P<tsrs_ast::Diagnostic>; 0]
+    );
     utils.fs().write_file("/src/dep.ts", "export const value = 2;").unwrap();
     session.did_change_watched_files(
         &ctx,

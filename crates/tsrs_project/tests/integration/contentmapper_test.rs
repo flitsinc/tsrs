@@ -176,7 +176,7 @@ fn relative_content_mapper_cannot_escape_workspace_through_node_modules() {
     let main = uri("file:///home/trusted/main.ts");
     session.did_open_file(
         &ctx(),
-        main.clone(),
+        main,
         1,
         "export {};".to_string(),
         lsproto::LanguageKind::TYPE_SCRIPT,
@@ -186,7 +186,7 @@ fn relative_content_mapper_cannot_escape_workspace_through_node_modules() {
         .project_collection
         .configured_project(&Path::from("/home/trusted/tsconfig.json"))
         .unwrap();
-    assert!(project.command_line.unwrap().content_mappers().is_empty());
+    assert_eq!(project.command_line.unwrap().content_mappers(), []);
     assert_eq!(spawner.spawns.load(Ordering::SeqCst), 0);
     session.close();
 }
@@ -219,7 +219,7 @@ fn inherited_relative_mapper_resolves_from_its_declaring_config() {
     let main = uri("file:///home/trusted/main.ts");
     session.did_open_file(
         &ctx(),
-        main.clone(),
+        main,
         1,
         "export {};".to_string(),
         lsproto::LanguageKind::TYPE_SCRIPT,
