@@ -1462,13 +1462,6 @@ impl Checker {
         if !every_type(self, t, super::checker::Checker::is_valid_index_key_type) {
             return self.grammar_error_on_node(parameter.name, &diagnostics::AN_INDEX_SIGNATURE_PARAMETER_TYPE_MUST_BE_STRING_NUMBER_SYMBOL_OR_A_TEMPLATE_LITERAL_TYPE, &[]);
         }
-        if index_signature.function_like_base.type_.get().is_none() {
-            return self.grammar_error_on_node(
-                node,
-                &diagnostics::AN_INDEX_SIGNATURE_MUST_HAVE_A_TYPE_ANNOTATION,
-                &[],
-            );
-        }
         false
     }
 
