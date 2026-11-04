@@ -1382,13 +1382,16 @@ impl RegExpParser {
                 return Cow::Owned(stringutil::encode_js_string_rune(low));
             }
             let (ch, size) = decode_rune(&text.as_bytes()[self.pos() as usize..]);
-            if ch == RUNE_ERROR || size == 0 {
+            // A real U+FFFD decodes with size 3; only size 1 means invalid UTF-8.
+            if size == 0 {
+                return Cow::Borrowed("");
+            }
+            if ch == RUNE_ERROR && size == 1 {
                 // Not a valid rune; consume one raw byte.
                 self.inc_pos(1);
                 let p = (self.pos() - 1) as usize;
                 return match text.get(p..p + 1) {
                     Some(s) => Cow::Borrowed(s),
-                    // A multi-byte U+FFFD in valid UTF-8 text: Go returns its first byte.
                     None => Cow::Owned(rune_string(RUNE_ERROR)),
                 };
             }
@@ -1406,9 +1409,9 @@ impl RegExpParser {
         if size == 0 {
             return Cow::Borrowed("");
         }
-        if ch == RUNE_ERROR {
+        if ch == RUNE_ERROR && size == 1 {
             // Invalid UTF-8; consume the byte to avoid infinite loops.
-            self.inc_pos(size as u32);
+            self.inc_pos(1);
             return Cow::Borrowed("");
         }
         self.inc_pos(size as u32);
