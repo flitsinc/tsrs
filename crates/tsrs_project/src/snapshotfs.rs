@@ -577,33 +577,49 @@ impl SnapshotFSBuilder {
         previous_open_files: &FxHashMap<Path, Arc<dyn FileHandle>>,
         open_files: &FxHashMap<Path, Arc<dyn FileHandle>>,
     ) -> bool {
-        // pure lookup any(); returns a bool only; Go ranges the set too
-        if change.changed.keys().iter().any(|uri| {
-            let path = (self.to_path)(&uri.file_name());
-            if previous_open_files.contains_key(&path) || open_files.contains_key(&path) {
+        for changes in [&change.changed, &change.created, &change.deleted] {
+            // Pure lookup; Go ranges the set too.
+            if changes.keys().iter().any(|uri| {
+                let path = (self.to_path)(&uri.file_name());
+                previous_open_files.contains_key(&path)
+                    || open_files.contains_key(&path)
+                    || self.cache_files.load(&path).is_some()
+                    || self.node_modules_realpath_aliases.load(&path).is_some()
+            }) {
                 return true;
             }
-            if self.cache_files.load(&path).is_some() {
-                return true;
-            }
-            self.node_modules_realpath_aliases.load(&path).is_some()
-        }) {
-            return true;
-        }
-        // pure lookup any(); returns a bool only; Go ranges the set too
-        if change.deleted.keys().iter().any(|uri| {
-            let path = (self.to_path)(&uri.file_name());
-            if previous_open_files.contains_key(&path) || open_files.contains_key(&path) {
-                return true;
-            }
-            if self.cache_files.load(&path).is_some() {
-                return true;
-            }
-            self.node_modules_realpath_aliases.load(&path).is_some()
-        }) {
-            return true;
         }
         false
+    }
+
+    pub(crate) fn expand_created_cache_entries(
+        &self,
+        mut change: FileChangeSummary,
+    ) -> FileChangeSummary {
+        if change.created.is_empty() {
+            return change;
+        }
+        let mut created_directories = Set::default();
+        #[expect(
+            clippy::iter_over_hash_type,
+            reason = "set collection only; Go ranges the set too"
+        )]
+        for uri in change.created.keys() {
+            let path = (self.to_path)(&uri.file_name());
+            if self.cache_directories.get(&path).is_some() {
+                created_directories.add(path);
+            }
+        }
+        #[expect(clippy::iter_over_hash_type, reason = "set unions only; Go ranges the set too")]
+        for path in created_directories.keys() {
+            self.collect_files_recursive(
+                path,
+                &mut change.created,
+                &FxHashMap::default(),
+                &FxHashMap::default(),
+            );
+        }
+        change
     }
 
     // snapshotfs.go:483
@@ -630,16 +646,24 @@ impl SnapshotFSBuilder {
 
     // snapshotfs.go:503
     pub(crate) fn mark_dirty_files(&self, mut change: FileChangeSummary) -> FileChangeSummary {
-        if !change.changed.is_empty() {
+        let filter_changes = |changes: Set<lsproto::DocumentUri>, created: bool| {
+            if changes.is_empty() {
+                return changes;
+            }
             let filtered_changed: SyncSet<lsproto::DocumentUri> = SyncSet::default();
             let wg = new_work_group(false);
             #[expect(
                 clippy::iter_over_hash_type,
                 reason = "per-entry reload plus a set insert; Go runs these in parallel"
             )]
-            for uri in change.changed.keys() {
+            for uri in changes.keys() {
                 let path = (self.to_path)(&uri.file_name());
-                if let Some(file) = self.fs.get_file_by_path(&uri.file_name(), &path)
+                if created {
+                    // An open overlay remains authoritative even when its disk path is replaced.
+                    if self.fs.overlays().contains_key(&path) {
+                        continue;
+                    }
+                } else if let Some(file) = self.fs.get_file_by_path(&uri.file_name(), &path)
                     && file.is_overlay()
                 {
                     filtered_changed.add(uri.clone());
@@ -662,8 +686,10 @@ impl SnapshotFSBuilder {
             let mut new_changed =
                 tsrs_core::collections::new_set_with_size_hint(filtered_changed.size());
             new_changed.m.extend(filtered_changed.keys());
-            change.changed = new_changed;
-        }
+            new_changed
+        };
+        change.changed = filter_changes(change.changed, false);
+        change.created = filter_changes(change.created, true);
         #[expect(
             clippy::iter_over_hash_type,
             reason = "only deletes cache entries; Go ranges the set too"
@@ -983,39 +1009,29 @@ impl SnapshotFS {
             return change;
         }
 
-        let mut additional_changed: Set<lsproto::DocumentUri> = Set::default();
-        #[expect(clippy::iter_over_hash_type, reason = "pure set unions; Go ranges the set too")]
-        for uri in change.changed.keys() {
-            let path = (self.to_path)(&uri.file_name());
-            if let Some(aliases) = self.node_modules_realpath_aliases.get(&path) {
-                additional_changed.m.extend(
-                    aliases
-                        .paths
-                        .keys()
-                        .iter()
-                        .map(|alias_path| lsconv::file_name_to_document_uri(alias_path)),
-                );
+        let expand_set = |set: &mut Set<lsproto::DocumentUri>| {
+            let mut additional: Set<lsproto::DocumentUri> = Set::default();
+            #[expect(
+                clippy::iter_over_hash_type,
+                reason = "pure set unions; Go ranges the set too"
+            )]
+            for uri in set.keys() {
+                let path = (self.to_path)(&uri.file_name());
+                if let Some(aliases) = self.node_modules_realpath_aliases.get(&path) {
+                    additional.m.extend(
+                        aliases
+                            .paths
+                            .keys()
+                            .iter()
+                            .map(|alias_path| lsconv::file_name_to_document_uri(alias_path)),
+                    );
+                }
             }
-        }
-        // pure set unions; Go ranges the set too
-        change.changed.m.extend(additional_changed.keys().iter().map(std::clone::Clone::clone));
-
-        let mut additional_deleted: Set<lsproto::DocumentUri> = Set::default();
-        #[expect(clippy::iter_over_hash_type, reason = "pure set unions; Go ranges the set too")]
-        for uri in change.deleted.keys() {
-            let path = (self.to_path)(&uri.file_name());
-            if let Some(aliases) = self.node_modules_realpath_aliases.get(&path) {
-                additional_deleted.m.extend(
-                    aliases
-                        .paths
-                        .keys()
-                        .iter()
-                        .map(|alias_path| lsconv::file_name_to_document_uri(alias_path)),
-                );
-            }
-        }
-        // pure set unions; Go ranges the set too
-        change.deleted.m.extend(additional_deleted.keys().iter().map(std::clone::Clone::clone));
+            set.m.extend(additional.keys().iter().cloned());
+        };
+        expand_set(&mut change.changed);
+        expand_set(&mut change.created);
+        expand_set(&mut change.deleted);
 
         change
     }

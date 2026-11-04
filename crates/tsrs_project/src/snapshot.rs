@@ -356,6 +356,8 @@ impl Snapshot {
         let previous_open_files = overlay_file_handles(previous_overlays);
         let open_files = overlay_file_handles(overlays);
         if file_changes.has_excessive_watch_events() {
+            file_changes = fs.expand_created_cache_entries(file_changes);
+            file_changes = self.fs.expand_realpath_aliases(file_changes);
             let invalidate_start = Instant::now();
             if file_changes.invalidate_all {
                 fs.invalidate_cache();
@@ -402,6 +404,7 @@ impl Snapshot {
                 &previous_open_files,
                 &open_files,
             );
+            file_changes = fs.expand_created_cache_entries(file_changes);
             file_changes = self.fs.expand_realpath_aliases(file_changes);
             file_changes = fs.mark_dirty_files(file_changes);
             file_changes = fs.convert_open_and_close_to_changes(
