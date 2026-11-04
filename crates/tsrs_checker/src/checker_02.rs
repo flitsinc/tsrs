@@ -47,7 +47,8 @@ impl Checker {
             let Some(node) = node else {
                 panic!("Unexpected nil in getImmediateAliasedSymbol");
             };
-            let target = self.get_target_of_alias_declaration(Some(node));
+            let target = self
+                .get_target_of_alias_declaration(Some(node), true /*dontRecursivelyResolve*/);
             links.immediate_target.set(target);
         }
         links.immediate_target.get()
@@ -3321,6 +3322,13 @@ impl Checker {
                 node,
                 &diagnostics::A_CLASS_DECLARATION_WITHOUT_THE_DEFAULT_MODIFIER_MUST_HAVE_A_NAME,
                 &[],
+            );
+        }
+        if !Self::container_allows_block_scoped_variable(node.parent().unwrap()) {
+            self.grammar_error_on_node(
+                node,
+                &diagnostics::X_0_DECLARATIONS_CAN_ONLY_BE_DECLARED_INSIDE_A_BLOCK,
+                &[&"class"],
             );
         }
         self.check_class_like_declaration(node);

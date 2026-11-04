@@ -3059,7 +3059,11 @@ impl Checker {
 
     // checker.go:14866
     // returns Option (Go returns nil when the module cannot be resolved).
-    pub(crate) fn get_target_of_namespace_import(&mut self, node: P<Node>) -> Option<P<Symbol>> {
+    pub(crate) fn get_target_of_namespace_import(
+        &mut self,
+        node: P<Node>,
+        dont_recursively_resolve: bool,
+    ) -> Option<P<Symbol>> {
         let module_specifier = Self::get_module_specifier_for_import_or_export(node).unwrap();
         let attributes_type = self.get_type_from_import_attributes(ast::get_import_attributes(
             node.parent().unwrap().parent().unwrap(),
@@ -3070,14 +3074,24 @@ impl Checker {
             false, /*ignoreErrors*/
             attributes_type,
         );
-        let resolved = immediate
-            .map(|immediate| self.resolve_es_module_symbol(immediate, node, module_specifier));
+        let resolved = immediate.map(|immediate| {
+            self.resolve_es_module_symbol(
+                immediate,
+                node,
+                module_specifier,
+                dont_recursively_resolve,
+            )
+        });
         self.mark_symbol_of_alias_declaration_if_type_only(Some(node), None);
         resolved
     }
 
     // checker.go:14874
-    pub(crate) fn get_target_of_namespace_export(&mut self, node: P<Node>) -> Option<P<Symbol>> {
+    pub(crate) fn get_target_of_namespace_export(
+        &mut self,
+        node: P<Node>,
+        dont_recursively_resolve: bool,
+    ) -> Option<P<Symbol>> {
         let module_specifier = Self::get_module_specifier_for_import_or_export(node);
         if let Some(module_specifier) = module_specifier {
             let attributes_type = self.get_type_from_import_attributes(ast::get_import_attributes(
@@ -3089,8 +3103,14 @@ impl Checker {
                 false, /*ignoreErrors*/
                 attributes_type,
             );
-            let resolved = immediate
-                .map(|immediate| self.resolve_es_module_symbol(immediate, node, module_specifier));
+            let resolved = immediate.map(|immediate| {
+                self.resolve_es_module_symbol(
+                    immediate,
+                    node,
+                    module_specifier,
+                    dont_recursively_resolve,
+                )
+            });
             self.mark_symbol_of_alias_declaration_if_type_only(Some(node), None);
             return resolved;
         }
@@ -3167,8 +3187,14 @@ impl Checker {
             return None;
         }
         let name_text = name.text();
-        let target_symbol =
-            module_symbol.map(|m| self.resolve_es_module_symbol(m, specifier, module_specifier));
+        let target_symbol = module_symbol.map(|m| {
+            self.resolve_es_module_symbol(
+                m,
+                specifier,
+                module_specifier,
+                false, /*dontRecursivelyResolve*/
+            )
+        });
         if let Some(target_symbol) = target_symbol {
             // Note: The empty string is a valid module export name:
             //

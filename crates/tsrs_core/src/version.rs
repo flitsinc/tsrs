@@ -1,10 +1,10 @@
 use std::sync::LazyLock;
 
-// Go defaults to `7.1.0-beta` and can override it with ldflags. tsrs can override it at build time with
+// Go defaults to `7.1.0-dev` and can override it with ldflags. tsrs can override it at build time with
 // TSRS_TS_VERSION to match a tsgo binary's tsbuildinfo `version`; default builds keep Go's source default.
 const VERSION: &str = match option_env!("TSRS_TS_VERSION") {
     Some(v) => v,
-    None => "7.1.0-beta",
+    None => "7.1.0-dev",
 };
 
 pub fn version() -> &'static str {
