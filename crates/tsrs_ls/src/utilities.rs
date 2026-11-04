@@ -1564,7 +1564,8 @@ pub fn find_preceding_matching_token(
     let matching_token_text = scanner::token_to_string(matching_token_kind);
     // Text-scan based fast path - can be bamboozled by comments and other trivia, but often provides
     // a good, fast approximation without too much extra work in the cases where it fails.
-    let text = source_file.text();
+    let text = &source_file.text()
+        [..token.pos().expect_source("parsed tokens have source positions") as usize];
     let Some(best_guess_index) = text.rfind(matching_token_text) else {
         return None; // if the token text doesn't appear in the file, there can't be a match - super fast bail
     };
