@@ -1504,25 +1504,17 @@ impl View {
         if !comparison.is_eq() {
             return comparison;
         }
-        if a.module_specifier_kind == ResultKind::Ambient
-            && b.module_specifier_kind == ResultKind::Ambient
-        {
-            let comparison =
-                self.compare_node_core_module_specifiers(&a.module_specifier, &b.module_specifier);
-            if !comparison.is_eq() {
-                return comparison;
-            }
+        let comparison =
+            self.compare_node_core_module_specifiers(&a.module_specifier, &b.module_specifier);
+        if !comparison.is_eq() {
+            return comparison;
         }
-        if a.module_specifier_kind == ResultKind::Relative
-            && b.module_specifier_kind == ResultKind::Relative
-        {
-            let comparison = tsrs_core::compare_booleans(
-                is_fix_possibly_re_exporting_importing_file(a, self.importing_file.file_name()),
-                is_fix_possibly_re_exporting_importing_file(b, self.importing_file.file_name()),
-            );
-            if !comparison.is_eq() {
-                return comparison;
-            }
+        let comparison = tsrs_core::compare_booleans(
+            is_fix_possibly_re_exporting_importing_file(a, self.importing_file.file_name()),
+            is_fix_possibly_re_exporting_importing_file(b, self.importing_file.file_name()),
+        );
+        if !comparison.is_eq() {
+            return comparison;
         }
         let comparison = tspath::compare_number_of_directory_separators(
             &a.module_specifier,
