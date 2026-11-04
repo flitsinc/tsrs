@@ -1013,7 +1013,7 @@ impl<V: Default + LinkCopy + 'static> SymbolArenaLinkStore<V> {
 
 impl<V: 'static> SymbolArenaLinkStore<V> {
     #[inline]
-    pub(crate) fn try_get(&self, symbol: P<Symbol>) -> Option<P<V>> {
+    pub fn try_get(&self, symbol: P<Symbol>) -> Option<P<V>> {
         let id = self.generator.get_symbol_id(symbol).0;
         if let Some(key) = dense_link_key(id) {
             self.block_store.try_get(key)
