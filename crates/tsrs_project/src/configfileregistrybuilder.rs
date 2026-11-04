@@ -1075,16 +1075,19 @@ impl ParseConfigHost for ConfigFileRegistryBuilder {
         let Some(roots) = &self.session_options.initial_workspace_roots else {
             return true;
         };
+        let options = ComparePathsOptions {
+            current_directory: self.session_options.current_directory.clone(),
+            use_case_sensitive_file_names: self.fs.use_case_sensitive_file_names(),
+        };
+        if roots.iter().any(|root| tspath::contains_path(root, package_directory, &options)) {
+            return true;
+        }
         let components = tspath::get_path_components(package_directory, "");
         let Some(index) = components.iter().rposition(|component| component == "node_modules")
         else {
             return false;
         };
         let node_modules_path = tspath::get_path_from_path_components(&components[..=index]);
-        let options = ComparePathsOptions {
-            current_directory: self.session_options.current_directory.clone(),
-            use_case_sensitive_file_names: self.fs.use_case_sensitive_file_names(),
-        };
         roots.iter().any(|root| tspath::contains_path(root, &node_modules_path, &options))
     }
 

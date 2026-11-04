@@ -603,6 +603,17 @@ impl DefaultResolver<'_> {
             self,
             None,
         );
+        if tspath::is_external_module_name_relative(module_name) {
+            let package_directory = tspath::combine_paths(&containing_directory, &[module_name]);
+            if self.fs().directory_exists(&package_directory) {
+                let (original_path, path) =
+                    state.get_original_and_resolved_file_name(&package_directory);
+                return Some(P::new(state.create_resolved_module_handling_symlink(Some(
+                    Resolved { path, original_path, ..Resolved::default() },
+                ))));
+            }
+            return None;
+        }
         state.resolve_package_directory_only = true;
         let result =
             state.load_module_from_nearest_node_modules_directory(false /*typesScopeOnly*/);

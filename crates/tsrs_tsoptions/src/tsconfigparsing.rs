@@ -48,6 +48,7 @@ struct ExtendsResult {
     exclude: Option<Vec<CompilerOptionsValue>>,
     files: Option<Vec<CompilerOptionsValue>>,
     content_mappers: Option<Vec<CompilerOptionsValue>>,
+    content_mappers_config_file: String,
     compile_on_save: bool,
     extended_source_files: FxHashSet<String>,
 }
@@ -244,6 +245,7 @@ pub struct ParsedTsconfig {
     type_acquisition: Option<TypeAcquisition>,
     // Note that the case of the config path has not yet been normalized, as no files have been imported into the project yet
     extended_config_path: Option<Vec<String>>,
+    content_mappers_config_file: String,
 }
 
 fn parse_own_config_of_json_source_file(
@@ -385,6 +387,7 @@ fn parse_own_config_of_json_source_file(
             options: Some(compiler_options),
             type_acquisition: Some(type_acquisition),
             extended_config_path,
+            content_mappers_config_file: config_file_name.to_string(),
         },
         errors,
     )
@@ -1495,6 +1498,7 @@ fn parse_own_config_of_json(
         options: Some(options),
         type_acquisition: Some(type_acquisition),
         extended_config_path: Some(extended_config_path),
+        content_mappers_config_file: config_file_name.to_string(),
     };
     (parsed_config, errors)
 }
@@ -1666,6 +1670,7 @@ fn parse_config(
                 options: None,
                 type_acquisition: None,
                 extended_config_path: None,
+                content_mappers_config_file: String::new(),
             }
         } else {
             let (raw_result, err) = convert_to_object(source_file.unwrap().source_file);
@@ -1675,6 +1680,7 @@ fn parse_config(
                 options: None,
                 type_acquisition: None,
                 extended_config_path: None,
+                content_mappers_config_file: String::new(),
             }
         };
         return (result, errors);
@@ -1710,6 +1716,7 @@ fn parse_config(
             exclude: None,
             files: None,
             content_mappers: None,
+            content_mappers_config_file: String::new(),
             compile_on_save: false,
             extended_source_files: FxHashSet::default(),
         };
@@ -1740,6 +1747,7 @@ fn parse_config(
             && !raw.contains_key(&"contentMappers".to_string())
         {
             raw.insert("contentMappers".to_string(), CompilerOptionsValue::Array(content_mappers));
+            own_config.content_mappers_config_file = result.content_mappers_config_file;
         }
         if result.compile_on_save && !raw.contains_key(&"compileOnSave".to_string()) {
             raw.insert(
@@ -1866,6 +1874,7 @@ fn apply_extended_config(
             Some(CompilerOptionsValue::Array(a)) => Some(a.clone()),
             _ => None,
         };
+        result.content_mappers_config_file.clone_from(&extended_config.content_mappers_config_file);
     }
     if let CompilerOptionsValue::Object(extended_raw_map) = extends_raw
         && extended_raw_map.contains_key("compileOnSave")
@@ -2266,7 +2275,9 @@ fn parse_json_config_file_content_worker(
     } else if !content_mappers.is_empty() {
         // Resolve each mapper's package.json now so its name, version, and run command are available to
         // everything downstream (diagnostics, build-info staleness) without executing anything.
-        let containing_file = if config_file_name.is_empty() {
+        let containing_file = if !parsed_config.content_mappers_config_file.is_empty() {
+            parsed_config.content_mappers_config_file.clone()
+        } else if config_file_name.is_empty() {
             tspath::combine_paths(&base_path_for_file_names, &["tsconfig.json"])
         } else {
             config_file_name.to_string()
