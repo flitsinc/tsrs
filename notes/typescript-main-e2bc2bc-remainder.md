@@ -79,5 +79,19 @@ real JavaScript client decoder; one existing test is ignored. The module oracle 
 source copy, and its 37 active tests pass with one existing ignored test. All thirteen retained locale pairs
 pass formatting, placeholder and archive-content validation; localization runtime remains unsupported.
 
+The touched-crate suites report 653 active tests passed and four existing ignored tests, including the full
+imported lint baseline corpus. Strict workspace Clippy (`--workspace --all-targets`, warnings denied),
+formatting, source checks, script syntax checks and all eight generator freshness checks pass. Compiler-option
+declaration generation was checked separately because `gen-check.sh` excludes those regions; both generated
+files match byte for byte after repository formatting.
+
+All three affected Fourslash groups pass through the upstream Go harness and rebuilt Rust server:
+`TestCodeFixClassImplementDeepInheritance`, `TestJsdocInlineLinksInTypePosition`, and
+`TestFindAllRefsRootOfReferencedProject` (including its DeclarationMaps subtest). None is skipped, and the
+subprocess bridge shutdown check passes.
+
+The merged-symbol fork integration test also passes with `--features tsrs_core/shared-graph`, exercising
+the parent read-through and copy-on-write branch that default builds compile out.
+
 Full merged conformance, the scheduling sweep, complete Fourslash/API gates, published-version parity and
 performance evidence belong to the integrator. These targeted receipts do not establish those broader claims.
