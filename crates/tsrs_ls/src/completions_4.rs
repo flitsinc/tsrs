@@ -1444,13 +1444,7 @@ impl LanguageService {
 
             let new_clauses: Vec<P<Node>> = elements
                 .iter()
-                .map(|&element| {
-                    factory.new_case_or_default_clause(
-                        Kind::CaseClause,
-                        Some(element),
-                        factory.new_node_list(Vec::new()),
-                    )
-                })
+                .map(|&element| factory.new_case_clause(element, factory.new_node_list(Vec::new())))
                 .collect();
             let new_line_char = self.format_options().new_line_character.clone();
             let mut printer = create_snippet_printer(

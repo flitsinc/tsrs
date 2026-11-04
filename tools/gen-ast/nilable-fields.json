@@ -10,7 +10,6 @@
  "BreakStatement.Label",
  "CallExpression.QuestionDotToken",
  "CallExpression.TypeArguments",
- "CaseOrDefaultClause.Expression",
  "CatchClause.VariableDeclaration",
  "ClassLikeBase.HeritageClauses",
  "ClassLikeBase.TypeParameters",

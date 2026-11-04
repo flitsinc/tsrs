@@ -918,9 +918,7 @@ impl Node {
                 Some(self.as_for_in_or_of_statement().expression)
             }
             NodeDataTag::SwitchStatement => Some(self.as_switch_statement().expression),
-            NodeDataTag::CaseOrDefaultClause if self.kind() == Kind::CaseClause => {
-                self.as_case_or_default_clause().expression
-            }
+            NodeDataTag::CaseClause => Some(self.as_case_clause().expression),
             NodeDataTag::ExpressionStatement => Some(self.as_expression_statement().expression),
             NodeDataTag::ReturnStatement => self.as_return_statement().expression.get(),
             NodeDataTag::ThrowStatement => Some(self.as_throw_statement().expression),
@@ -1050,7 +1048,7 @@ impl Node {
             Kind::Block => Some(self.as_block().statements),
             Kind::ModuleBlock => Some(self.as_module_block().statements),
             Kind::CaseClause | Kind::DefaultClause => {
-                Some(self.as_case_or_default_clause().statements)
+                Some(self.case_or_default_clause_data().unwrap().statements)
             }
             _ => panic!("Unhandled case in Node.StatementList: {:?}", self.kind()),
         }

@@ -144,7 +144,7 @@ impl Dumper {
                 n.as_class_static_block_declaration().return_flow_node()
             }
             Kind::CaseClause | Kind::DefaultClause => {
-                if let Some(t) = n.as_case_or_default_clause().fallthrough_flow_node() {
+                if let Some(t) = n.case_or_default_clause_data().unwrap().fallthrough_flow_node() {
                     let r = self.flow_ref(Some(t));
                     let _ = write!(self.sb, " t={r}");
                 }

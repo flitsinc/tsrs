@@ -153,7 +153,8 @@ const SURFACE = [
     ["","fn","CallExpression","clone_node for_each_child visit_each_child"],
     ["","fn","CallSignatureDeclaration","clone_node for_each_child visit_each_child"],
     ["","fn","CaseBlock","clone_node for_each_child visit_each_child"],
-    ["","fn","CaseOrDefaultClause","clone_node for_each_child visit_each_child"],
+    ["","fn","CaseClause","clone_node for_each_child visit_each_child"],
+    ["","fn","DefaultClause","clone_node for_each_child visit_each_child"],
     ["","fn","CatchClause","clone_node for_each_child visit_each_child"],
     ["","fn","ClassDeclaration","clone_node for_each_child set_modifiers visit_each_child"],
     ["","fn","ClassExpression","clone_node for_each_child set_modifiers visit_each_child"],
@@ -1417,6 +1418,7 @@ function genNodeImpl() {
         ["function_like_data", "FunctionLikeBase"],
         ["class_like_data", "ClassLikeBase"],
         ["body_data", "BodyBase"],
+        ["case_or_default_clause_data", "CaseOrDefaultClauseBase"],
         ["literal_like_data", "LiteralLikeNodeBase"],
         ["template_literal_like_data", "TemplateLiteralLikeNodeBase"],
     ];

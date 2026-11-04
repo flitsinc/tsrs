@@ -416,13 +416,15 @@ impl CommonJSModuleTransformer {
 
     // commonjsmodule.go:1308
     pub(crate) fn visit_top_level_nested_case_or_default_clause(&self, node: P<Node>) -> P<Node> {
-        let n = node.as_case_or_default_clause();
-        let expression = self.visitor().visit_node(n.expression);
-        self.factory().update_case_or_default_clause(
-            node,
-            expression,
-            self.top_level_nested_visitor().visit_nodes(Some(n.statements)).unwrap(),
-        )
+        if node.kind() == Kind::CaseClause {
+            let expression = self.visitor().visit_node(node.expression()).unwrap();
+            let statements =
+                self.top_level_nested_visitor().visit_nodes(node.statement_list()).unwrap();
+            return self.factory().update_case_clause(node, expression, statements);
+        }
+        let statements =
+            self.top_level_nested_visitor().visit_nodes(node.statement_list()).unwrap();
+        self.factory().update_default_clause(node, statements)
     }
 
     // commonjsmodule.go:1318

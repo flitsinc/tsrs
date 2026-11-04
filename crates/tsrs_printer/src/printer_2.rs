@@ -2319,7 +2319,7 @@ impl Printer {
 
 impl Printer {
     fn emit_case_or_default_clause_statements(&mut self, node: P<Node>, colon_pos: TextPos) {
-        let statements = node.as_case_or_default_clause().statements();
+        let statements = node.statement_list().unwrap();
         let emit_as_single_statement = statements.nodes().len() == 1
             // treat synthesized nodes as located on the same line for emit purposes
             && (self.current_source_file().is_none()
@@ -2343,7 +2343,7 @@ impl Printer {
 
     pub(crate) fn emit_case_clause(&mut self, node: P<Node>) {
         let state = self.enter_node(node);
-        let expression = node.as_case_or_default_clause().expression().unwrap();
+        let expression = node.as_case_clause().expression();
         self.emit_token(Kind::CaseKeyword, node.pos(), WriteKind::Keyword, node);
         self.write_space();
         self.emit_expression(expression, OperatorPrecedence::LOWEST);
