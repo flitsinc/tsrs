@@ -2356,11 +2356,10 @@ pub struct LazyState {
 impl LazyState {
     pub(crate) fn property_slots(&self) -> &'static [OvCell<Option<P<Symbol>>>] {
         if self.properties.get().is_empty() {
-            self.properties.set(alloc_vec(
-                (0..self.layout.members.map_or(0, |members| members.len()))
-                    .map(|_| OvCell::default())
-                    .collect(),
-            ));
+            self.properties.set(alloc_vec(vec![
+                OvCell::default();
+                self.layout.members.map_or(0, |members| members.len())
+            ]));
         }
         self.properties.get()
     }

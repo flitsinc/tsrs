@@ -3497,7 +3497,7 @@ impl Checker {
                 cell
             },
             base_types: instantiated_base_types,
-            properties_resolved: Default::default(),
+            properties_resolved: tsrs_core::sharedgraph::OvCell::default(),
             properties: tsrs_core::sharedgraph::OvExact::new(&[]),
         }));
         self.propagate_resolved_declared_members();
@@ -3505,7 +3505,7 @@ impl Checker {
     }
 
     // checker.go:19685
-    fn propagate_resolved_declared_members(&mut self) {
+    fn propagate_resolved_declared_members(&self) {
         let r = self.resolving_object_type_stack.last().unwrap();
         let lazy = r.t.as_structured_type().get_lazy_state().unwrap();
         for symbol in r.resolved_members.values() {
@@ -3602,7 +3602,7 @@ impl Checker {
             id: self.member_layout_count,
             members: members.map(|members| members.clone_table()),
             base_indices: alloc_slice(&base_indices),
-            layout_properties: Default::default(),
+            layout_properties: tsrs_core::sharedgraph::OvCell::default(),
         });
         self.member_layout_count += 1;
         if let Some(members) = members {
