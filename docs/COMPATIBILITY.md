@@ -12,6 +12,12 @@ Named declared members also remain accessible during recursive type resolution, 
 [`recursive-declared-members` regression](../testdata/regressions/recursive-declared-members) checks recursive
 schema input inference without accepting `any`.
 
+The unreleased fork also targets TypeScript main at `e2bc2bcb838e`, including insertion-ordered symbol
+tables/member layouts, the AST optionality changes and `--disableDynamicImportExtensionRewriting`.
+The [remainder port note](../notes/typescript-main-e2bc2bc-remainder.md) records the exact upstream scope,
+existing Rust equivalents, unsupported facilities and targeted validation. Release and beta conformance
+counts below remain historical; they are not a claim that the final merged main-pin gate has completed.
+
 ## Conformance
 
 tsrs is a function-by-function port of the Go implementation of TypeScript (`microsoft/TypeScript`, commit
