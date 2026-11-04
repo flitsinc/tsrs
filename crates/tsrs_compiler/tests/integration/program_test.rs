@@ -145,10 +145,10 @@ fn config_for(files: &[(&str, &str)]) -> P<tsoptions::ParsedCommandLine> {
 
 #[test]
 fn shared_graph_materializes_lazy_members_in_each_fork() {
+    const CHILD: &str = "TSRS_LAZY_LAYOUT_FORK_CHILD";
     if !tsrs_core::sharedgraph::COMPILED_IN {
         return;
     }
-    const CHILD: &str = "TSRS_LAZY_LAYOUT_FORK_CHILD";
     if std::env::var_os(CHILD).is_none() {
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "program_test::shared_graph_materializes_lazy_members_in_each_fork"])
@@ -169,7 +169,7 @@ fn shared_graph_materializes_lazy_members_in_each_fork() {
     let program = new_program(ProgramOptions::new(config_for(&files), host_for(&files)));
     program.bind_source_files();
     let file = program.get_source_file("/src/index.ts").unwrap();
-    let symbol = file.statements()[0].symbol().unwrap();
+    let symbol = file.statements().nodes()[0].symbol().unwrap();
     let region = tsrs_core::arena::Region::new_scratch(32 << 20);
     let scope = region.enter();
     let mut seed = tsrs_checker::new_checker(program);
@@ -186,10 +186,13 @@ fn shared_graph_materializes_lazy_members_in_each_fork() {
     std::mem::forget(region);
     let seed = Box::leak(seed);
     tsrs_core::sharedgraph::freeze(&chunks);
+    let mut previous_members = None;
     for _ in 0..2 {
         let mut fork = tsrs_checker::Checker::fork(seed);
         tsrs_core::sharedgraph::enter_overlay(&fork.overlay);
         let members = t.as_structured_type().members(&mut fork).unwrap();
+        assert_ne!(previous_members, Some(members));
+        previous_members = Some(members);
         assert_eq!(members.len(), 2);
         assert!(members.lookup("first").is_some());
         assert!(members.lookup("second").is_some());
